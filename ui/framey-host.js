@@ -404,9 +404,11 @@
   // Some published buttons expose only Decky's OK action. Native activation
   // uses it as a fallback; keep an explicit click handler authoritative and
   // pass the original click event rather than fabricating gamepad input.
-  const DialogButton = ({children, disabled, onClick, onOKButton, ...props}) =>
-    R.createElement('button', {...props, type:'button', disabled:!!disabled,
+  // The real forwardRef render also supports legacy render({}).type lookup.
+  const DialogButton = R.forwardRef(function DialogButton({children, disabled, onClick, onOKButton, ...props}, ref) {
+    return R.createElement('button', {...props, ref, type:'button', disabled:!!disabled,
       onClick:event=>{if(!disabled)(onClick || onOKButton)?.(event);}}, children);
+  });
   const Focusable = R.forwardRef(function Focusable(
     {children, onActivate, onCancel, onClick, onKeyDown, disabled, tabIndex, role, ...props}, ref) {
     const actionable=typeof onActivate==='function' || typeof onClick==='function';
@@ -438,18 +440,18 @@
         }
       }}, children);
   });
-  const Field = ({label, description, icon, style, className, children, disabled,
-    focusable=false, onActivate, onClick}) => {
+  const Field = R.forwardRef(function Field({label, description, icon, style, className, children, disabled,
+    focusable=false, onActivate, onClick}, ref) {
     const actionable=typeof onActivate==='function' || typeof onClick==='function';
     // Action rows need a local focus target. Ordinary setting labels retain
     // their native input association instead of gaining another tab stop.
-    const props={style,className};
+    const props={style,className,ref};
     if (actionable || focusable) Object.assign(props,{disabled,onActivate,onClick,
       tabIndex:focusable ? (disabled ? -1 : 0) : undefined});
     return R.createElement(actionable || focusable ? Focusable : 'label', props,
       icon != null && R.createElement('span', null, icon),
       R.createElement('strong', null, label), description && R.createElement('small', null, description), children);
-  };
+  });
   // DFL/@decky/ui Toggle uses value; ToggleField uses checked. Keep the
   // standalone control separate so persisted true settings render correctly.
   const Toggle = ({value, disabled, onChange}) => R.createElement('input', {
@@ -751,7 +753,7 @@
     label != null && R.createElement('h3', null, label), children);
   const ConfirmModal = ({strTitle, strDescription, strOKButtonText, strCancelButtonText,
     strMiddleButtonText, onOK, onCancel, onMiddleButton, closeModal, frameySetModalBusy,
-    bOKDisabled, bCancelDisabled, bMiddleDisabled, bAlertDialog, children}) => {
+    bOKDisabled, bCancelDisabled, bMiddleDisabled, bAlertDialog, bDestructiveWarning, children}) => {
     const inFlight = R.useRef(false);
     const mounted = R.useRef(true);
     const [busy, setBusy] = R.useState(false);
@@ -798,7 +800,9 @@
       R.createElement('h2', null, strTitle),
       strDescription && R.createElement('div', null, strDescription), children,
       error && R.createElement('p', {role:'alert'}, error),
+      bDestructiveWarning && R.createElement('p', {className:'framey-destructive-note'}, 'Destructive action'),
       R.createElement('button', {type:'button', disabled:!!bOKDisabled || busy,
+        className:bDestructiveWarning ? 'framey-destructive' : undefined,
         onClick:action(onOK, bOKDisabled)}, strOKButtonText || 'OK'),
       onMiddleButton && R.createElement('button', {type:'button', disabled:!!bMiddleDisabled || busy,
         onClick:action(onMiddleButton, bMiddleDisabled)}, strMiddleButtonText || 'More'),
@@ -1231,7 +1235,7 @@
   };
   localModules.set('framey/components', Object.freeze(Object.fromEntries(
     Object.entries(DFL).filter(([name,value])=>/^[A-Z]/.test(name) &&
-      (typeof value==='function' || [Focusable,TextField,ScrollPanel,ScrollPanelGroup].includes(value))))));
+      (typeof value==='function' || [DialogButton,Field,Focusable,TextField,ScrollPanel,ScrollPanelGroup].includes(value))))));
   // Some panels eagerly look up the optional Steam UI sound player. Allow the
   // lookup, but never claim playback or expose Steam's mutable audio store.
   localModules.set('framey/ui-audio', Object.freeze({UIAudio:Object.freeze({
@@ -1336,7 +1340,6 @@
     };
     addEventListener('pagehide',() => {closed = true; listeners.clear(); close();});
   }
-  DFL.DialogButton.render = () => ({type: DFL.DialogButton});
   const toaster = {toast: ({title, body, subtext, icon, logo, duration, showToast=true, onClick}={}) => {
     const data = {title, body, subtext, icon, logo};
     if (!showToast) return {data, dismiss(){}};
@@ -1380,9 +1383,13 @@
   }};
   class PanelBoundary extends R.Component {
     constructor(props) { super(props); this.state = {failure:null}; }
-    static getDerivedStateFromError(failure) { return {failure}; }
-    render() { return this.state.failure ? R.createElement('p', null,
-      `This Decky panel is not compatible with Framey: ${this.state.failure.message}`) : this.props.children; }
+    static getDerivedStateFromError(failure) {
+      // Published render helpers also throw strings. Capture a nonempty text
+      // diagnostic so falsy thrown values cannot bypass this boundary.
+      return {failure:String(failure?.message || failure) || 'Unknown render failure'};
+    }
+    render() { return this.state.failure ? R.createElement('p', {role:'alert'},
+      `This Decky panel is not compatible with Framey: ${this.state.failure}`) : this.props.children; }
   }
   function PluginSurface({plugin}) {
     const [view, setView] = R.useState(plugin.content ? 'panel' : 'settings');
@@ -1419,9 +1426,13 @@
         ...actions.map((action, index) => R.createElement('button', {key:index, type:'button',
           disabled:running !== null, onClick:()=>runAction(action,index)}, action.label))),
       message && R.createElement('p', {role:'status'}, message),
-      R.createElement('div', null, route ? (typeof activeRoute(route)?.component === 'function' ?
-        R.createElement(activeRoute(route).component) : activeRoute(route)?.component) :
-        (view === 'settings' ? plugin.settings : plugin.content)));
+      // A broken content view must not remove the controls that can leave it.
+      // Reset only when navigation selects another view; ordinary redraws
+      // preserve healthy child state and do not retry a failing render.
+      R.createElement('div', null, R.createElement(PanelBoundary, {key:route ? `route:${route}` : `view:${view}`},
+        route ? (typeof activeRoute(route)?.component === 'function' ?
+          R.createElement(activeRoute(route).component) : activeRoute(route)?.component) :
+          (view === 'settings' ? plugin.settings : plugin.content))));
   }
   window.__DECKY_SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED_deckyLoaderAPIInit = {
     connect: (version, name) => ({
