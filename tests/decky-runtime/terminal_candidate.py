@@ -12,6 +12,65 @@ DEPENDENCIES = {
     'aarch64': ('arm', 'python@sha256:eaecc1a821ac5f032c7cc29d6fdd2cca4199ca97f8d11ea79417e9f647dbd809', 183),
 }
 
+# Generated only inside the disposable Terminal candidate. Do not change the
+# parent loader, await conditions, method results or timeout budgets.
+STARTUP_DIAGNOSTICS = r'''
+import functools
+import importlib
+import json
+import os
+import time
+
+_events = 0
+
+def record(phase, error=None):
+    global _events
+    if _events >= 64:
+        return
+    _events += 1
+    event = dict(phase=phase, pid=os.getpid(), monotonicNs=time.monotonic_ns())
+    if error is not None:
+        event['errorType'] = type(error).__name__
+    try:
+        print('FRAMEY_TERMINAL_STARTUP_JSON='+json.dumps(event), flush=True)
+    except OSError:
+        pass
+
+def wrap(original, started, finished):
+    @functools.wraps(original)
+    async def observed(*args, **kwargs):
+        record(started)
+        try:
+            result = await original(*args, **kwargs)
+        except BaseException as error:
+            record(started+'-error', error)
+            raise
+        record(finished)
+        return result
+    observed._framey_startup_observer = True
+    return observed
+
+def begin():
+    record('module-import-started')
+    socket = importlib.import_module('decky_loader.localplatform.localsocket').UnixSocket
+    if not getattr(socket.setup_server, '_framey_startup_observer', False):
+        socket.setup_server = wrap(socket.setup_server, 'socket-setup-started', 'socket-listening')
+    if not getattr(socket._listen_for_method_call, '_framey_startup_observer', False):
+        socket._listen_for_method_call = wrap(socket._listen_for_method_call,
+            'socket-connection-accepted', 'socket-connection-closed')
+    sandbox = importlib.import_module('decky_loader.plugin.sandboxed_plugin').SandboxedPlugin
+    if not getattr(sandbox.on_new_message, '_framey_startup_observer', False):
+        sandbox.on_new_message = wrap(sandbox.on_new_message, 'message-received', 'message-handled')
+
+def loaded(plugin):
+    record('module-import-finished')
+    for method, phase in (('_migration', 'migration'), ('_main', 'main'),
+                          ('get_terminals', 'get-terminals')):
+        original = getattr(plugin, method, None)
+        if callable(original):
+            setattr(plugin, method, wrap(original, phase+'-started', phase+'-finished'))
+'''
+
 
 def apply(plugin, record):
     assert record['id'] == 65 and sys.platform == 'linux'
@@ -102,6 +161,12 @@ _framey_Path('/home/tester/terminal-candidate-abi.json').write_text(_framey_json
     versionInfo=list(_framey_sys.version_info), cacheTag=_framey_sys.implementation.cache_tag,
     architecture=_framey_os.uname().machine, termiosPath=_framey_termios.__file__)))
 ''')
+
+    (plugin/'py_modules/framey_terminal_startup.py').write_text(STARTUP_DIAGNOSTICS)
+    source.write_text('from framey_terminal_startup import begin as _framey_startup_begin, loaded as _framey_startup_loaded\n'
+                      '_framey_startup_begin()\n' + source.read_text() +
+                      '\n_framey_startup_loaded(Plugin)\n'
+                      'del _framey_startup_begin, _framey_startup_loaded\n')
 
     return dict(developmentOnly=True, installedByProduction=False,
                 architecture=arch, dependencies=expected,
