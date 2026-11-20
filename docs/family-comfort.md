@@ -52,6 +52,10 @@ Set a limit of 1–240 minutes, optional break and check-in intervals, then
 **Cancel session** cancels the timer and monitoring without changing the game.
 Cancel before starting a session with different settings.
 
+Status polling pauses while a start or cancel request is pending. A status
+reply or failure from before that request cannot replace its result in the
+companion. Polling resumes after the request finishes, including after an error.
+
 The Frame shows a one-minute warning, then opens Steam Home in its dashboard.
 **Games stay running**: save and pause before the limit. Some games pause when
 the dashboard opens; others do not. There is no kill, power-off, Steam restart,

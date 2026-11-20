@@ -8,9 +8,9 @@
 <meta name="theme-color" content="#0e141b">
 <link rel="icon" href="/favicon.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="stylesheet" href="/css/site.css">
-<script src="/js/site.js" defer></script>
-<script src="/js/feedback.js" defer></script>
+<link rel="stylesheet" href="/css/site.css?v=20261119-reconcile1">
+<script src="/js/site.js?v=20261119-reconcile1" defer></script>
+<script src="/js/feedback.js?v=20261119-reconcile1" defer></script>
 </head>
 <body>
 
@@ -29,7 +29,7 @@
         <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
         GitHub
       </a>
-      <a class="btn small coffee" data-kofi href="#" target="_blank" rel="noopener">Support</a>
+      <a class="btn small coffee" data-kofi hidden href="#" target="_blank" rel="noopener">Support</a>
     </div>
   </div>
 </header>
@@ -39,7 +39,8 @@
     <div class="head">
       <span class="kicker">Feedback</span>
       <h1>Tell us what happened</h1>
-      <p>Bugs, ideas and questions all help. What you send becomes a public issue on GitHub, where you can follow it.</p>
+      <p>Bugs, ideas and questions all help. What you send becomes a public issue on GitHub, where you can follow it. Don't include passwords or personal details.</p>
+      <p>For private questions, <a href="mailto:saphid@gmail.com">email Frame Control support</a>.</p>
     </div>
 
     <div class="form-wrap">
@@ -73,8 +74,8 @@
 
           <div class="row3">
             <div class="field">
-              <label for="os">Your computer</label>
-              <input type="text" id="os" name="os" maxlength="120" placeholder="e.g. Windows 11">
+              <label for="os">Your device and operating system</label>
+              <input type="text" id="os" name="os" maxlength="120" placeholder="e.g. Windows 11, or iPhone 16 with iOS 26">
             </div>
             <div class="field">
               <label for="version">App version</label>
@@ -87,7 +88,7 @@
           </div>
 
           <div class="field">
-            <label for="github">GitHub username <small>Optional. Add it to get notified when someone replies.</small></label>
+            <label for="github">GitHub username <small>Optional and not verified. Subscribe to the created issue on GitHub to follow replies.</small></label>
             <input type="text" id="github" name="github" maxlength="40" autocomplete="username" placeholder="@yourname">
           </div>
 
@@ -115,11 +116,12 @@
 
       <aside class="panel">
         <h3>Reporting a bug?</h3>
-        <p>The server log helps most: in the app, choose <b>Frame → Show Server Log</b> and paste the last few lines into Details.</p>
+        <p>The server log helps most: in the desktop app, choose <b>Frame → Show Server Log</b> and paste the last few lines into Details.</p>
+        <p>On iPhone or iPad, include your device model, iOS version, Frame Control version and SteamOS version.</p>
         <h3>Prefer GitHub?</h3>
         <p>You can <a href="https://github.com/saphid/frame-control/issues/new/choose">open an issue there directly</a>. First-time issues are closed until a maintainer reviews them; see <a href="https://github.com/saphid/frame-control/blob/main/CONTRIBUTING.md">CONTRIBUTING.md</a>. This form skips that queue.</p>
-        <h3 data-needs-kofi>Enjoying it?</h3>
-        <p data-needs-kofi>Frame Control is free. <a data-kofi href="#" target="_blank" rel="noopener">Buy me a coffee</a> if it saved you some time.</p>
+        <h3 data-needs-kofi hidden>Enjoying it?</h3>
+        <p data-needs-kofi hidden>Frame Control is free. <a data-kofi hidden href="#" target="_blank" rel="noopener">Buy me a coffee</a> if it saved you some time.</p>
       </aside>
     </div>
   </div>

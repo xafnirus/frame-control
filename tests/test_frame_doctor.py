@@ -24,7 +24,8 @@ class FrameDoctor(unittest.TestCase):
         config = result('hostname private-tailnet.ts.net\nhostkeyalias pinned-frame\n')
         with patch.object(doctor.shutil, 'which', return_value='/usr/bin/ssh'), \
                 patch.object(doctor, 'run', side_effect=[config, *responses]) as run, \
-                patch.object(doctor, 'port_open', return_value=kwargs.get('devkit', False)), \
+                patch.object(doctor, 'port_open', return_value=kwargs.get('devkit', False),
+                             side_effect=kwargs.get('port_probe')), \
                 patch('sys.stdout', new_callable=io.StringIO) as output:
             code = doctor.main(kwargs.get('argv', []))
         return code, output.getvalue(), run
@@ -59,6 +60,58 @@ class FrameDoctor(unittest.TestCase):
     def test_no_implicit_mdns_fallback(self):
         _, _, run = self.main([result(code=255), result(code=255)])
         self.assertFalse(any('HostName=frame.local' in str(c.args[0]) for c in run.call_args_list))
+
+    def test_no_usb_checks_only_the_configured_alias(self):
+        code, text, run = self.main([result(code=255)], argv=['--no-usb'])
+        self.assertEqual(code, 2)
+        self.assertEqual(run.call_count, 2)  # config and one authenticated SSH attempt
+        self.assertNotIn('HostName=10.86.200.233', run.call_args_list[1].args[0])
+        self.assertIn('No authenticated SSH path.', text)
+        self.assertNotIn('USB-C', text)
+
+    def test_missing_fallback_cannot_report_local_devkit_as_the_frame(self):
+        for argv in ([], ['--no-usb']):
+            with self.subTest(argv=argv):
+                probed = []
+                def port_probe(host, port):
+                    probed.append(host)
+                    return host is None  # socket's missing-host resolution is loopback
+                code, text, _ = self.main([result(code=255)] * 2, argv=argv,
+                                         port_probe=port_probe)
+                self.assertEqual(code, 2)
+                self.assertNotIn(None, probed)
+                self.assertIn('Devkit port did not respond', text)
+
+    def test_no_usb_keeps_an_explicit_lan_fallback(self):
+        code, text, run = self.main([result(code=255), result(json.dumps(self.stable()))],
+                                   argv=['--no-usb', '--lan', '192.0.2.9'])
+        self.assertEqual(code, 1)
+        self.assertEqual(run.call_count, 3)
+        args = run.call_args_list[-1].args[0]
+        self.assertIn('HostName=192.0.2.9', args)
+        self.assertIn('HostKeyAlias=pinned-frame', args)
+        self.assertIn('StrictHostKeyChecking=yes', args)
+        self.assertIn('OK Connection: LAN', text)
+
+    def test_default_usb_fallback_is_retained(self):
+        _, text, run = self.main([result(code=255), result(json.dumps(self.stable()))])
+        self.assertIn('HostName=10.86.200.233', run.call_args_list[-1].args[0])
+        self.assertIn('OK Connection: USB-C', text)
+
+    def test_disabling_usb_changes_report_target_and_blocks_comparison(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / 'before.json'
+            self.main([result(json.dumps(self.stable()))],
+                      argv=['--no-usb', '--save-report', str(path)])
+            # The same route choice can compare; restoring USB changes the target.
+            code, text, _ = self.main([result(json.dumps(self.stable()))],
+                                     argv=['--no-usb', '--compare-before', str(path)])
+            self.assertEqual(code, 1)
+            self.assertIn('Before/after', text)
+            code, text, run = self.main([], argv=['--compare-before', str(path)])
+            self.assertEqual(code, 2)
+            self.assertIn('comparison refused', text)
+            self.assertEqual(run.call_count, 1)
 
     def test_hostkey_failure_does_not_suggest_deleting_identity(self):
         _, text, _ = self.main([result(code=255, err='REMOTE HOST IDENTIFICATION HAS CHANGED')] * 3)

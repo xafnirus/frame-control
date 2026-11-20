@@ -25,25 +25,25 @@ async function overLimit(kv, key, limit, ttl) {
 
 export async function onRequestPost({ request, env }) {
   if (!env.GITHUB_TOKEN || !env.GITHUB_REPO) {
-    return json(503, { error: "Feedback isn't connected to GitHub yet. Use the GitHub link instead." });
+    return json(503, { error: "Feedback isn't connected to GitHub yet. Use the GitHub link instead.", retrySafe: true });
   }
 
   const origin = request.headers.get("origin");
   if (origin && new URL(origin).host !== new URL(request.url).host) {
-    return json(403, { error: "Send feedback from the website's form." });
+    return json(403, { error: "Send feedback from the website's form.", retrySafe: true });
   }
 
   let input;
   try {
     input = await request.json();
   } catch {
-    return json(400, { error: "Send the form as JSON." });
+    return json(400, { error: "Send the form as JSON.", retrySafe: true });
   }
 
   const checked = validate(input);
   // Bots get a success-shaped answer so they don't learn what tripped them.
   if (checked.spam) return json(200, { ok: true });
-  if (checked.error) return json(400, { error: checked.error });
+  if (checked.error) return json(400, { error: checked.error, retrySafe: true });
 
   // Best effort: KV is eventually consistent, so bursts can slip past, and a
   // storage error lets the feedback through rather than losing it.
@@ -54,33 +54,47 @@ export async function onRequestPost({ request, env }) {
     // Salted with the secret token, so the stored hashes can't be reversed by trying every IP.
     const who = await hashIp(ip, env.GITHUB_TOKEN);
     if (await overLimit(env.FEEDBACK_RL, `ip:${who}:${hour}`, PER_IP_PER_HOUR, 3900)) {
-      return json(429, { error: "That's a lot of feedback in one hour. Try again later, or use GitHub." });
+      return json(429, { error: "That's a lot of feedback in one hour. Try again later, or use GitHub.", retrySafe: true });
     }
     if (await overLimit(env.FEEDBACK_RL, `day:${day}`, TOTAL_PER_DAY, 90000)) {
-      return json(429, { error: "The form has had a busy day. Try again tomorrow, or use GitHub." });
+      return json(429, { error: "The form has had a busy day. Try again tomorrow, or use GitHub.", retrySafe: true });
     }
   } catch (err) {
     console.log(`Rate limit check failed: ${err}`);
   }
 
-  const res = await fetch(`https://api.github.com/repos/${env.GITHUB_REPO}/issues`, {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${env.GITHUB_TOKEN}`,
-      accept: "application/vnd.github+json",
-      "x-github-api-version": "2022-11-28",
-      "user-agent": "frame-control-website",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify(buildIssue(checked.value)),
-  });
+  // A missing acknowledgement does not prove that GitHub failed to create an
+  // issue. Never automatically retry this POST or invite a duplicate submission.
+  const uncertain = () => json(502, { error: "Delivery could not be confirmed. Check recent issues before sending again.", retrySafe: false });
+  let res;
+  try {
+    res = await fetch(`https://api.github.com/repos/${env.GITHUB_REPO}/issues`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${env.GITHUB_TOKEN}`,
+        accept: "application/vnd.github+json",
+        "x-github-api-version": "2022-11-28",
+        "user-agent": "frame-control-website",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(buildIssue(checked.value)),
+    });
+  } catch {
+    return uncertain();
+  }
 
   if (!res.ok) {
-    console.log(`GitHub answered ${res.status}: ${(await res.text()).slice(0, 500)}`);
-    return json(502, { error: "GitHub didn't accept it just now. Try again, or use the GitHub link." });
+    console.log(`GitHub answered ${res.status}`);
+    if (res.status >= 400 && res.status < 500) {
+      return json(502, { error: "GitHub refused the submission. Use the GitHub link instead.", retrySafe: true });
+    }
+    return uncertain();
   }
-  const issue = await res.json();
+  let issue;
+  try { issue = await res.json(); } catch { return uncertain(); }
+  if (!Number.isSafeInteger(issue?.number) || issue.number < 1 ||
+      issue.html_url !== `https://github.com/${env.GITHUB_REPO}/issues/${issue.number}`) return uncertain();
   return json(201, { ok: true, number: issue.number, url: issue.html_url });
 }
 
-export const onRequest = () => json(405, { error: "POST only." });
+export const onRequest = () => json(405, { error: "POST only.", retrySafe: true });

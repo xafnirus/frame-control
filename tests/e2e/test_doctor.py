@@ -1,5 +1,6 @@
 """Real doctor/SSH against fake-Frame faults; never a real headset."""
 import subprocess
+import socket
 import sys
 import tempfile
 from pathlib import Path
@@ -57,3 +58,35 @@ class Doctor(harness.FrameTestCase):
             self.assertIn('Steam and storage: BROKEN ->', after.stdout)
             self.assertNotIn('Steam and storage: BROKEN -> BROKEN', after.stdout)
             self.assertIn('no automatic repair is available', after.stdout)
+
+    def test_no_usb_baseline_uses_alias_and_refuses_changed_routes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            baseline = str(Path(folder) / 'alias-only.json')
+            command = [sys.executable, str(ROOT / 'scripts/frame_doctor.py')]
+            before = subprocess.run([*command, '--no-usb', '--save-report', baseline],
+                                    capture_output=True, text=True, timeout=120)
+            self.assertEqual(before.returncode, 1, before.stdout + before.stderr)
+            self.assertIn('OK Connection: configured alias', before.stdout)
+            self.assertTrue(Path(baseline).is_file())
+            after = subprocess.run([*command, '--no-usb', '--compare-before', baseline],
+                                   capture_output=True, text=True, timeout=120)
+            self.assertEqual(after.returncode, 1, after.stdout + after.stderr)
+            self.assertIn('Before/after', after.stdout)
+            changed = subprocess.run([*command, '--compare-before', baseline],
+                                     capture_output=True, text=True, timeout=120)
+            self.assertEqual(changed.returncode, 2, changed.stdout + changed.stderr)
+            self.assertIn('SSH target configuration differs', changed.stdout)
+
+    def test_no_usb_does_not_probe_test_hosts_loopback(self):
+        # A different devkit-like service on the computer is not the Frame.
+        # Only this isolated test-host container owns this listener.
+        with socket.create_server(('127.0.0.1', 32000)) as local:
+            ctl('sshd', 'off')
+            ctl('devkit-service', 'off')
+            run = subprocess.run([sys.executable, str(ROOT / 'scripts/frame_doctor.py'),
+                                  '--no-usb'], capture_output=True, text=True, timeout=120)
+            self.assertEqual(run.returncode, 2, run.stdout + run.stderr)
+            self.assertIn('Devkit port did not respond', run.stdout)
+            local.settimeout(.1)
+            with self.assertRaises(socket.timeout):
+                local.accept()

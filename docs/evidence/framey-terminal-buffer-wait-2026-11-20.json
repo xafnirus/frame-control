@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "kind": "historical-hosted-artifact-audit",
+  "auditDate": "2026-11-20",
+  "newRuntimeExecution": false,
+  "sourceRevision": "1d8154b31097f4a1d1a8aa8fa956583a0cb19f5d",
+  "workflowRun": 44763171823,
+  "job": 136380748641,
+  "runAttempt": 1,
+  "artifact": {
+    "id": 14645980830,
+    "name": "terminal-browser-ubuntu-24.04-arm",
+    "sha256": "72f91a69496c9581a044fd093fcb7e45943b94b9a5623965a0b537a3f3aead52",
+    "bytes": 402330,
+    "filesSha256": {
+      "inputs.json": "7a9769dc4fbc98b1b367b409edb6e63a2169f816242c973b5a1a1e1b01af1b88",
+      "result.json": "a3182aa34d535299bf20faa32278da2b36cc14525badc7598573eb6c09daf9e8",
+      "console.log": "fef0dddeaaec85a820a993fcabd4de0e06fd6d60a39cbfc63f1717ae3d46f0de",
+      "guest-result.packet": "de78c631a41d33a203c36c07b492475abd20625fe44b0ed12cfb80b686c6d923"
+    }
+  },
+  "sourceBindingsVerified": 177,
+  "inputs": {
+    "architecture": "aarch64",
+    "accelerator": "tcg,thread=multi",
+    "cpuModel": "max",
+    "memoryMiB": 6144,
+    "loaderSha256": "8ef5dcf36cbbbb6e97201a6baed5d79c4cc44ec27789fc9af1c5b6ae8f0b25b6",
+    "officialArchiveSha256": "7bd8765ca57663a24178b05687acb52c3723518ac9eac1c14419a87904c0a872",
+    "rootfsSha256": "f092cb461afef10de4c94ffb87a02a9a2e1dcecf898e5294803c87eb164724ad",
+    "productionHttpRequested": true,
+    "networkDevice": false,
+    "hostBusExposed": false,
+    "realFrameContacted": false,
+    "productionAdaptationEnabled": false
+  },
+  "originalSuccess": false,
+  "failure": "actual frontend Terminal subscription/buffer not ready: None",
+  "frontendWaits": [
+    {
+      "description": "production Terminal terminal",
+      "timeoutSeconds": 90,
+      "startedAfterSeconds": 148.896,
+      "outcome": "success",
+      "finishedAfterSeconds": 188.507
+    },
+    {
+      "description": "actual frontend Terminal subscription/buffer",
+      "timeoutSeconds": 90,
+      "startedAfterSeconds": 188.507,
+      "outcome": "failure",
+      "errorType": "RuntimeError",
+      "finishedAfterSeconds": 278.599
+    }
+  ],
+  "methodRequests": [
+    {
+      "method": "get_terminals",
+      "startedAfterSeconds": 148.128,
+      "elapsedSeconds": 18.8,
+      "completedAfterSeconds": 166.928,
+      "httpStatus": 200
+    },
+    {
+      "method": "create_terminal",
+      "startedAfterSeconds": 149.964,
+      "elapsedSeconds": 18.256,
+      "completedAfterSeconds": 168.22,
+      "httpStatus": 200
+    },
+    {
+      "method": "get_terminals",
+      "startedAfterSeconds": 168.589,
+      "elapsedSeconds": 11.311,
+      "completedAfterSeconds": 179.9,
+      "httpStatus": 200
+    },
+    {
+      "method": "change_terminal_window_size",
+      "startedAfterSeconds": 187.434,
+      "elapsedSeconds": 7.473,
+      "completedAfterSeconds": 194.907,
+      "httpStatus": 200
+    },
+    {
+      "method": "get_config",
+      "startedAfterSeconds": 196.879,
+      "elapsedSeconds": 11.352,
+      "completedAfterSeconds": 208.231,
+      "httpStatus": 200
+    },
+    {
+      "method": "get_terminal",
+      "startedAfterSeconds": 208.669,
+      "elapsedSeconds": 18.05,
+      "completedAfterSeconds": 226.719,
+      "httpStatus": 200
+    },
+    {
+      "method": "unsubscribe_terminal",
+      "startedAfterSeconds": 209.176,
+      "elapsedSeconds": 19.516,
+      "completedAfterSeconds": 228.692,
+      "httpStatus": 200
+    },
+    {
+      "method": "subscribe_terminal",
+      "startedAfterSeconds": 244.849,
+      "elapsedSeconds": 17.155,
+      "completedAfterSeconds": 262.004,
+      "httpStatus": 200
+    },
+    {
+      "method": "send_terminal_buffer",
+      "startedAfterSeconds": 265.126,
+      "elapsedSeconds": 22.329,
+      "completedAfterSeconds": 287.455,
+      "httpStatus": 200
+    }
+  ],
+  "bufferTiming": {
+    "startedAfterWaitSeconds": 76.619,
+    "completedAfterSeconds": 287.455,
+    "completedAfterRecordedFailureSeconds": 8.856
+  },
+  "cleanup": {
+    "ownedTargetClosed": true,
+    "ownedBrowserReaped": true,
+    "httpServerStopped": true,
+    "sshObserverRemoved": true,
+    "ownedDeckyServiceStopped": true,
+    "originalUnitRestored": true,
+    "ownedBundleRemoved": true,
+    "ownedQemuReaped": true,
+    "ownedUserManagerStopped": true,
+    "requestDrain": {
+      "drained": true,
+      "pendingHandlers": 0,
+      "timeoutSeconds": 35,
+      "productionDeadlineChanged": false
+    }
+  },
+  "parentErrors": [],
+  "causeEstablished": false,
+  "repairEstablished": false,
+  "deadlinesChanged": false,
+  "qualificationPassed": false,
+  "physicalFrameOrWornProof": false
+}

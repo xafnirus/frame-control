@@ -2,7 +2,8 @@
 // ui/index.html with a fake server: the headset's reason when it lists no panels, a failed
 // listing shown (first time too) rather than "Finding…", and recovery after it.
 import { readFileSync } from "fs";
-const src = readFileSync(new URL("../../ui/index.html", import.meta.url), "utf8");
+import assert from "node:assert/strict";
+const src = readFileSync(process.argv[2] || new URL("../../ui/index.html", import.meta.url), "utf8");
 const grab = name => {
   const m = src.match(new RegExp(`(?:\\nconst ${name} = [^\\n]*\\n)|((?:async )?function ${name}\\([\\s\\S]*?\\n}\\n)`));
   if (!m) throw new Error("not found: " + name);
@@ -14,19 +15,24 @@ for (const name of ["loadPanels", "noPanelWhy", "deskPanel", "ctrlTarget"]) {
   const count = (src.match(new RegExp(`\\n(?:async )?function ${name}\\(`, "g")) || []).length;
   if (count !== 1) { console.log(`FAIL ${name} is defined ${count} times`); process.exit(1); }
 }
-const code = ["desk", "panelKey", "noPanelWhy", "deskPanel", "loadPanels", "ctrlTarget"].map(grab).join("");
+const code = ["desk", "panelKey", "noPanelWhy", "deskPanel", "loadPanels", "watchPanels", "ctrlTarget"].map(grab).join("");
 const fail = msg => { console.log("FAIL " + msg); process.exit(1); };
 
 function page(answer) {
-  const calls = [], logged = [];
+  const calls = [], logged = [], timers = new Map();
+  let nextTimer = 1;
   const env = {
     view: "flat", live: false, ctrlMode: () => "abs", renderPanelPick: () => {}, toggleLive: () => {}, ctrlShow: () => {},
+    document: {hidden: false},
+    setTimeout: (fn, delay) => { const id=nextTimer++; timers.set(id,{fn,delay}); return id; },
+    clearTimeout: id => timers.delete(id),
     log: (m) => logged.push(m),
     api: async (path, body) => { calls.push([path, body]); return answer(); },
   };
   const fns = new Function(...Object.keys(env), `${code}
-    return { desk, noPanelWhy, loadPanels, ctrlTarget };`)(...Object.values(env));
-  return { ...fns, calls, logged };
+    return { desk, noPanelWhy, loadPanels, watchPanels, ctrlTarget,
+      setView: value => { view=value; } };`)(...Object.values(env));
+  return { ...fns, calls, logged, timers };
 }
 
 // The Desktop view asks for the headset's panels with a plain GET (no switcher action).
@@ -88,4 +94,50 @@ function page(answer) {
   if (q.logged.length || q.desk.error) fail("stale answer used: " + q.desk.error);
   if (q.ctrlTarget().why !== "Finding the headset's panels…") fail("stale: " + q.ctrlTarget().why);
 }
+// Deferred reads and the real polling functions reproduce overlap in both orders.
+const failures = [];
+for (const scenario of ["late_success", "late_error", "new_error", "duplicate_poll"]) {
+  try {
+    const pending = [];
+    const p = page(() => new Promise((resolve,reject) => pending.push({resolve,reject})));
+    if (scenario === "duplicate_poll") {
+      p.watchPanels();
+      p.setView("headset"); p.setView("flat"); p.watchPanels();
+      pending[1].resolve({panels:[],focus:null});
+      await new Promise(resolve=>setImmediate(resolve));
+      pending[0].resolve({panels:[],focus:null});
+      await new Promise(resolve=>setImmediate(resolve));
+      assert.equal(p.timers.size,1,"only the current poll chain may reschedule");
+      const [id,timer] = [...p.timers][0];
+      assert.equal(timer.delay,3000);
+      p.timers.delete(id); timer.fn();
+      pending[2].resolve({panels:[],focus:null});
+      await new Promise(resolve=>setImmediate(resolve));
+      assert.equal(p.timers.size,1,"the single chain must keep polling");
+      p.setView("headset");
+      const next = [...p.timers.values()][0]; next.fn();
+      assert.equal(p.calls.length,3,"no request outside Desktop view");
+    } else {
+      const old = p.loadPanels(), current = p.loadPanels();
+      const snapshot = window => ({panels:[{window,display:":0",name:String(window)}],focus:window,focus_display:":0"});
+      if (scenario === "new_error") pending[1].reject(new Error("Current failure"));
+      else pending[1].resolve(snapshot(9));
+      await current;
+      if (scenario === "late_error") pending[0].reject(new Error("Old failure"));
+      else pending[0].resolve(snapshot(7));
+      if (scenario !== "new_error") { p.desk.pick=":0/9"; p.desk.shown=":0/9"; }
+      await old;
+      if (scenario === "new_error") {
+        assert.equal(p.desk.error,"Current failure");
+        assert.equal(p.desk.panels.length,0,"old success cannot hide a current failure");
+      } else {
+        assert.equal(p.desk.panels[0].window,9,"old list must not replace current panels");
+        assert.equal(p.desk.pick,":0/9");
+        assert.equal(p.desk.error,"");
+        assert.equal(p.ctrlTarget().panel.window,9,"control target stays on current panel");
+      }
+    }
+  } catch (error) { failures.push({scenario,error:String(error)}); }
+}
+assert.deepEqual(failures,[]);
 console.log("ok");

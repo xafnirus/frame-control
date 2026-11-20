@@ -39,14 +39,15 @@ def plugins(folder):
                 # Valid JSON can still be a list or scalar. A bad receipt
                 # cannot claim ownership or abort the remaining inventory.
                 if not isinstance(owned, dict): owned = {}
-                # This name is also the backend RPC/event identity and store
-                # collision key. Only presentation metadata may be shortened;
-                # the manifest read above already bounds the complete name.
+                # Names and receipt digests are RPC/event identities, not
+                # presentation strings. Keep them exact; metadata reads above
+                # already bound their size. Never turn a longer or non-string
+                # digest into a valid-looking SHA-256 value.
                 found.append({'folder': child.name, 'name': str(data.get('name', child.name)),
                               'author': str(data.get('author', ''))[:80],
                               'storeId': owned.get('storeId') if type(owned.get('storeId')) is int and owned['storeId']>0 else None,
                               'version': str(owned.get('version', ''))[:40],
-                              'sha256': str(owned.get('sha256', ''))[:64],
+                              'sha256': owned.get('sha256') if isinstance(owned.get('sha256'), str) else '',
                               'compatShims': [s[:100] for s in owned.get('compatShims', []) if isinstance(s, str)][:16]
                                   if isinstance(owned.get('compatShims'), list) else []})
             except (ValueError, OSError, UnicodeError): pass

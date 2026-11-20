@@ -522,3 +522,100 @@ assert.equal(vm.runInContext('key',deniedBoot),'private-key');
   assert.equal(posts.length,1);assert.equal(posts[0].action,'remove');
   assert.equal(posts[0].installedSha256,'a'.repeat(64));assert.equal(confirms,1);
 }
+
+// Every managed store change restarts the shared Decky service, including an
+// install or a change to a different plugin. Retire that other panel before
+// submitting, close its subscriptions, and discard replies from its old session.
+for(const action of ['install','update','remove']){
+  for(const outcome of ['success','rejected','lost']){
+    const entries=new Map(),listeners=[],replies=[],calls=[];
+    const get=id=>{if(!entries.has(id))entries.set(id,new Element(id));return entries.get(id);};
+    const frame={postMessage:message=>replies.push(message)};
+    get('frameyFrame').contentWindow=frame;
+    const state={managed:true,running:true,plugins:[
+      {storeId:2,name:'Open settings',version:'1',sha256:'a'.repeat(64)},
+      ...(action==='install'?[]:[{storeId:3,name:'Changed plugin',version:'1',sha256:'b'.repeat(64)}])]};
+    let confirmed=true,finishStore,finishRead,finishStatus;
+    const context=vm.createContext({document:{getElementById:get,createElement:()=>new Element()},
+      location:{hash:'',pathname:'/'},history:{replaceState(){}},crypto:webcrypto,
+      sessionStorage:{getItem:()=>null,setItem(){},removeItem(){}},
+      window:{addEventListener:(type,fn)=>listeners.push({type,fn})},
+      setInterval(){},setTimeout(){},console,confirm:()=>confirmed});
+    vm.runInContext(script,context);
+    const run=expression=>vm.runInContext(expression,context);
+    context.mockApi=(path,body)=>{
+      calls.push({path,body});
+      if(path==='/api/framey/method')return new Promise(resolve=>{finishRead=resolve;});
+      if(path==='/api/decky/plugin')return new Promise((resolve,reject)=>{
+        // The iframe/session must be retired before the store can stop Decky.
+        assert.equal(get('frameyPanel').hidden,true,`${action}/${outcome}: old panel survived submission`);
+        assert.equal(get('frameyFrame').src,undefined);
+        assert.equal(run('activeFrameyId'),null);
+        finishStore=()=>{
+          if(outcome==='success')resolve({job:body.requestId});
+          else{const error=Error(outcome==='lost'?'Store reply lost':'Store rejected');
+            if(outcome==='rejected')error.status=409;reject(error);}
+        };
+      });
+      if(path.startsWith('/api/job'))return Promise.resolve({done:true,message:'Synthetic store change complete'});
+      if(path==='/api/decky/panel-status')return new Promise(resolve=>{finishStatus=()=>resolve(state);});
+      if(['/api/framey/events','/api/framey/running','/api/framey/downloads'].includes(path))
+        return Promise.resolve({result:{}});
+      throw Error(`unexpected ${path}`);
+    };
+    context.state=state;
+    context.change={id:3,name:'Changed plugin',sha256:'c'.repeat(64),
+      ...(action==='install'?{}:{installedSha256:'b'.repeat(64)})};
+    get('deckyStoreFilter').value='all';
+    run('api=mockApi;deckyState=state;openFrameyPanel(2,"Open settings")');
+    const previousSession=run('frameySession');
+    const message=listeners.find(item=>item.type==='message').fn;
+    const oldRead=message({source:frame,data:{type:'framey:call',session:previousSession,
+      id:1,method:'get_setting',args:['enabled',false]}});
+    assert.equal(calls.filter(call=>call.path==='/api/framey/method').length,1);
+    // Represent subscriptions already opened by this panel, with the real
+    // production close path sending their receipt/session-bound disposals.
+    run('frameyEventsActive=true;frameyRunningActive=true;frameyDownloadsActive=true');
+    confirmed=false;
+    await run(`deckyChange('${action}',change)`);
+    assert.equal(get('frameyPanel').hidden,false,'cancel keeps the existing view and subscriptions');
+    assert.equal(calls.length,1);
+    confirmed=true;
+    const pending=run(`deckyChange('${action}',change)`);
+    assert.equal(get('frameyPanel').hidden,true,`${action}/${outcome}: unrelated panel must retire before submission`);
+    assert.equal(typeof finishStore,'function');
+    assert.deepEqual(calls.slice(1).map(call=>call.path),[
+      '/api/framey/downloads','/api/framey/running','/api/framey/events','/api/decky/plugin']);
+    for(const call of calls.slice(1,4)){
+      assert.equal(call.body.id,2);assert.equal(call.body.receipt,'a'.repeat(64));
+      assert.equal(call.body.session,previousSession);
+    }
+    assert.equal(calls[1].body.action,'close');
+    assert.equal(calls[2].body.active,false);assert.equal(calls[3].body.events.length,0);
+    run('openFrameyPanel(2,"Open settings")');
+    assert.equal(get('frameyPanel').hidden,true,'cannot reopen while the store result is pending');
+    finishRead({result:false});await oldRead;
+    assert.equal(replies.length,0,'late settings reply must not reach the retired view');
+    await message({source:frame,data:{type:'framey:call',session:previousSession,
+      id:2,method:'set_setting',args:['enabled',true]}});
+    assert.equal(calls.filter(call=>call.path==='/api/framey/method').length,1,
+      'retired settings callback must not issue another backend mutation');
+    finishStore();
+    for(let n=0;n<10&&!finishStatus;n++)await Promise.resolve();
+    assert.equal(typeof finishStatus,'function');
+    run('openFrameyPanel(2,"Open settings")');
+    assert.equal(get('frameyPanel').hidden,true,'status refresh must finish before reopening');
+    finishStatus();await pending;
+    assert.equal(get('frameyPanel').hidden,true,'never automatically restore a retired settings view');
+    assert.match(get('deckyJobStatus').textContent,/reopen it after refreshing installed plugins/);
+    run('openFrameyPanel(2,"Open settings")');
+    assert.equal(get('frameyPanel').hidden,outcome==='lost','unknown store result requires recovery first');
+    if(outcome!=='lost'){
+      assert.notEqual(run('frameySession'),previousSession);
+      await message({source:frame,data:{type:'framey:call',session:previousSession,
+        id:3,method:'set_setting',args:['enabled',true]}});
+      assert.equal(calls.filter(call=>call.path==='/api/framey/method').length,1,
+        'reopened iframe must still reject the previous session');
+    }
+  }
+}

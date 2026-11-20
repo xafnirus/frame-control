@@ -38,7 +38,38 @@ class Media(unittest.TestCase):
             with self.assertRaises(ValueError):
                 media.plan(name)
         with self.assertRaises(ValueError):
-            media.plan('film.mkv', metadata={'stereo_mode': 'right_left'})
+            media.plan('film.mkv', metadata={'stereo_mode': 'checkerboard_rl'})
+
+    def test_right_first_layout_selection_and_aspect(self):
+        for mode, layout in [('right_left', 'full-sbs-rl'), ('bottom_top', 'full-ou-rl')]:
+            with self.subTest(mode=mode):
+                self.assertEqual(media.plan('film.mkv', metadata={'stereo_mode': mode}),
+                                 {'kind': 'video', 'layout': layout, 'source': 'metadata'})
+                self.assertEqual(media.plan('film.mkv', 'mono', {'stereo_mode': mode})['layout'], 'mono')
+        for layout, aspect in [('sbs-rl', 2), ('ou-rl', .5), ('full-sbs-rl', 1), ('full-ou-rl', 1)]:
+            with self.subTest(layout=layout):
+                self.assertEqual(media.plan('photo.png', layout)['layout'], layout)
+                self.assertEqual(media.geometry(1920, 1080, layout), (1920, 1080, aspect))
+        for name in ('photo_RL.png', 'photo_SBS_RL.png', 'photo_BT.png', 'photo_OU_BT.png'):
+            with self.subTest(name=name), self.assertRaisesRegex(ValueError, 'explicit'):
+                media.plan(name)
+
+    def test_right_first_pixels_normalize_each_eye_without_mirroring(self):
+        # Asymmetric pixels and two rows distinguish swapping eyes from mirroring or flipping.
+        def pixel(value):
+            return bytes([value, 0, 0, 255])
+        left = [pixel(1)+pixel(2), pixel(3)+pixel(4)]
+        right = [pixel(5)+pixel(6), pixel(7)+pixel(8)]
+        expected = b''.join(l+r for l, r in zip(left, right))
+        for layout in ('sbs-rl', 'full-sbs-rl'):
+            source = b''.join(r+l for l, r in zip(left, right))
+            self.assertEqual(media.stereo_pixels(source, 4, 2, layout), (expected, 4, 2))
+        for layout in ('ou-rl', 'full-ou-rl'):
+            source = b''.join(right+left)
+            self.assertEqual(media.stereo_pixels(source, 2, 4, layout), (expected, 4, 2))
+        for width, height, layout in [(3, 2, 'sbs-rl'), (2, 3, 'ou-rl')]:
+            with self.subTest(layout=layout), self.assertRaises(ValueError):
+                media.stereo_pixels(bytes(width*height*4), width, height, layout)
 
     def test_unsupported_containers_do_not_flatten_spatial_photos(self):
         for name in ('spatial.HEIC', 'stereo.mpo', 'cloud.ply', 'cloud.spz', 'app.exe'):
@@ -54,21 +85,136 @@ class Media(unittest.TestCase):
         self.assertEqual(media.geometry(3840, 2160, 'sbs'), (1920, 1080, 2))
         self.assertEqual(media.geometry(1920, 1080, 'ou'), (1920, 1080, .5))
 
+    def test_pixel_aspect_preserves_per_eye_shape_after_bounded_scaling(self):
+        for layout, eye_factor in [('mono', 1), ('sbs', 1), ('ou', 1),
+                                   ('full-sbs', .5), ('full-ou', 2),
+                                   ('sbs-rl', 1), ('ou-rl', 1),
+                                   ('full-sbs-rl', .5), ('full-ou-rl', 2)]:
+            for width, height in [(720, 576), (3840, 2160), (1919, 1079)]:
+                with self.subTest(layout=layout, dimensions=(width, height)):
+                    w, h, aspect = media.geometry(width, height, layout, '64:45')
+                    self.assertLessEqual(w, 1920)
+                    self.assertLessEqual(h, 1080)
+                    if layout.removesuffix('-rl') in ('ou', 'full-ou'):
+                        eye_width, eye_height = w, h/2
+                    else:
+                        eye_width, eye_height = (w if layout == 'mono' else w/2), h
+                    self.assertAlmostEqual(eye_width/eye_height*aspect,
+                                           width/height*64/45*eye_factor)
+
+    def test_unknown_pixel_aspect_defaults_to_square_and_invalid_ratios_fail(self):
+        for ratio in (None, '', 'N/A', '0:1', '1:1'):
+            with self.subTest(ratio=ratio):
+                self.assertEqual(media.geometry(1920, 1080, 'sbs', ratio), (1920, 1080, 2))
+        for ratio in ('1:0', '0:0', '-1:1', '1:-1', 'nan', 'inf', '1:2:3', 2):
+            with self.subTest(ratio=ratio), self.assertRaisesRegex(ValueError, 'pixel aspect'):
+                media.geometry(1920, 1080, 'mono', ratio)
+
     def test_decode_is_hardware_and_one_clock_for_audio(self):
         for codec, decoder in [('h264', 'h264_v4l2m2m'), ('hevc', 'hevc_v4l2m2m')]:
-            cmd = player.decoder_command(Path('/tmp/a file.mp4'), {'codec_name': codec}, 1280, 720, True)
+            cmd = player.decoder_command(Path('/tmp/a file.mp4'), {'index': 0, 'codec_name': codec}, 1280, 720, {'index': 1})
             self.assertIn(decoder, cmd)
             self.assertIn('-re', cmd)
             self.assertIn('pulse', cmd)
             self.assertIn(str(Path('/tmp/a file.mp4')), cmd)
         with self.assertRaises(ValueError):
-            player.decoder_command(Path('x.webm'), {'codec_name': 'vp9'}, 640, 480, False)
-        cmd = player.decoder_command(Path('x.png'), {'codec_name': 'png'}, 640, 480, False, True)
+            player.decoder_command(Path('x.webm'), {'index': 0, 'codec_name': 'vp9'}, 640, 480, None)
+        cmd = player.decoder_command(Path('x.png'), {'index': 0, 'codec_name': 'png'}, 640, 480, None, True)
         self.assertNotIn('-re', cmd)
         self.assertIn('-frames:v', cmd)
 
+    def test_movie_uses_default_video_instead_of_earlier_preview_or_cover(self):
+        # Shape observed from a generated MKV: an MJPEG preview precedes its
+        # default H.264 movie. An attached cover must never win either.
+        preview = dict(index=0, codec_type='video', codec_name='mjpeg',
+                       width=32, height=24, disposition={'default': 0})
+        movie = dict(index=2, codec_type='video', codec_name='h264',
+                     width=64, height=48, disposition={'default': 1})
+        cover = dict(preview, index=3, disposition={'default': 1, 'attached_pic': 1})
+        audio = dict(index=1, codec_type='audio', codec_name='aac')
+        for streams in ([preview, audio, movie], [cover, audio, movie]):
+            with self.subTest(streams=streams), patch.object(player.subprocess, 'run',
+                    return_value=unittest.mock.Mock(returncode=0, stdout=json.dumps({'streams': streams}))):
+                info, selected_audio = player.probe(Path('movie.mkv'))
+                self.assertEqual(info, movie)
+                self.assertEqual(selected_audio, audio)
+                cmd = player.decoder_command(Path('movie.mkv'), info, 64, 48, selected_audio)
+                self.assertEqual(cmd[cmd.index('-map')+1], '0:2')
+                self.assertEqual(cmd[cmd.index('-c:2')+1], 'h264_v4l2m2m')
+                self.assertIn('0:1', cmd)
+
+    def test_movie_audio_follows_default_track_and_falls_back_to_first(self):
+        video = dict(index=1, codec_type='video', codec_name='h264', width=64, height=48)
+        first = dict(index=0, codec_type='audio', codec_name='aac', disposition={'default': 0})
+        preferred = dict(first, index=2, disposition={'default': 1})
+        later_default = dict(preferred, index=3)
+        for streams, expected in [([first, video, preferred, later_default], preferred),
+                                  ([first, video], first),
+                                  ([video], None)]:
+            with self.subTest(streams=streams), patch.object(player.subprocess, 'run',
+                    return_value=unittest.mock.Mock(returncode=0, stdout=json.dumps({'streams': streams}))):
+                info, audio = player.probe(Path('movie.mkv'))
+                self.assertEqual(audio, expected)
+                cmd = player.decoder_command(Path('movie.mkv'), info, 64, 48, audio)
+                maps = [cmd[i+1] for i, v in enumerate(cmd) if v == '-map']
+                self.assertEqual(maps, ['0:1'] + ([] if expected is None else ['0:%s' % expected['index']]))
+                self.assertEqual('pulse' in cmd, expected is not None)
+                # Photos never start audio, even if their container includes it.
+                photo = player.decoder_command(Path('photo.png'), info, 64, 48, audio, photo=True)
+                self.assertNotIn('pulse', photo)
+
+    def test_probe_falls_back_to_first_video_and_keeps_standalone_photos(self):
+        first = dict(index=1, codec_type='video', codec_name='png', width=4, height=2)
+        second = dict(first, index=2)
+        cover = dict(first, index=0, disposition={'attached_pic': 1})
+        for streams in ([first], [cover, first, second]):
+            with self.subTest(streams=streams), patch.object(player.subprocess, 'run',
+                    return_value=unittest.mock.Mock(returncode=0, stdout=json.dumps({'streams': streams}))):
+                info, audio = player.probe(Path('photo.png'))
+                self.assertEqual(info, first)
+                self.assertFalse(audio)
+                cmd = player.decoder_command(Path('photo.png'), info, 4, 2, audio, photo=True)
+                self.assertEqual(cmd[cmd.index('-map')+1], '0:1')
+        with patch.object(player.subprocess, 'run', return_value=unittest.mock.Mock(
+                returncode=0, stdout=json.dumps({'streams': [cover]}))):
+            with self.assertRaisesRegex(ValueError, 'No image or video stream'):
+                player.probe(Path('artwork.mp4'))
+
+    def test_rotated_mono_uses_display_dimensions_and_reciprocal_pixel_aspect(self):
+        for rotation in (90, -90, 270, 450):
+            with self.subTest(rotation=rotation):
+                created = []
+                info = {'codec_name': 'h264', 'width': 4, 'height': 2,
+                        'sample_aspect_ratio': '2:1',
+                        'tags': {'rotate': '180'},  # matrix takes precedence over stale tags
+                        'side_data_list': [{'side_data_type': 'Display Matrix', 'rotation': rotation}]}
+                result, calls = self.play_with('portrait.mp4', info=info, layout='mono',
+                                              on_create=lambda *a, **k: created.append(a))
+                self.assertEqual(result['state'], 'ended')
+                self.assertEqual(calls[-1], (1, 2, 4))
+                self.assertEqual(created[-1][-1], .5)
+        # A half turn keeps both dimensions and pixel shape.
+        created = []
+        self.play_with('portrait.mp4', info={**info, 'side_data_list': [], 'tags': {'rotate': '180'}},
+                       layout='mono', on_create=lambda *a, **k: created.append(a))
+        self.assertEqual(created[-1][-1], 2)
+
+    def test_rotated_stereo_and_invalid_rotation_fail_before_openvr(self):
+        def unexpected_overlay(*a, **k):
+            self.fail('Invalid orientation reached OpenVR')
+        for layout in media.LAYOUTS[2:]:
+            with self.subTest(layout=layout), self.assertRaisesRegex(ValueError, 'rotated stereo'):
+                self.play_with('stereo.mp4', layout=layout, on_create=unexpected_overlay,
+                               info={'codec_name': 'h264', 'width': 4, 'height': 2,
+                                     'side_data_list': [{'side_data_type': 'Display Matrix', 'rotation': 90}]})
+        for rotation in (45, 'nan', 'inf', 'bad', None, True):
+            with self.subTest(rotation=rotation), self.assertRaisesRegex(ValueError, 'rotation'):
+                self.play_with('portrait.mp4', layout='mono', on_create=unexpected_overlay,
+                               info={'codec_name': 'h264', 'width': 4, 'height': 2,
+                                     'side_data_list': [{'side_data_type': 'Display Matrix', 'rotation': rotation}]})
+
     def play_with(self, name, busy=0, on_pixels=None, sleeps=None, info=None,
-                  fail=None, layout='auto', on_create=None, on_call=None):
+                  fail=None, layout='auto', on_create=None, on_call=None, frame=None, on_frame=None):
         """Run the player against a fake OpenVR; returns (status, pixels calls).
 
         Handle 0 is the theatre surround and 1 the screen. `fail(handle, n)` makes
@@ -97,6 +243,8 @@ class Media(unittest.TestCase):
 
             def pixels(self, handle, data, w, h):
                 calls.append((handle, w, h))
+                if on_frame:
+                    on_frame(handle, data, w, h)
                 if on_pixels:
                     on_pixels(len(calls))
                 if len(calls) <= busy or (fail and fail(handle, len(calls))):
@@ -107,7 +255,7 @@ class Media(unittest.TestCase):
                 # Call the installed handler directly: a real SIGTERM kills Windows.
                 stop_now()
 
-        frame = bytes(4*2*4)
+        frame = bytes(4*2*4) if frame is None else frame
         proc = unittest.mock.MagicMock()
         proc.stdout = io.BytesIO(frame*4)
         proc.wait.return_value = 0
@@ -115,7 +263,8 @@ class Media(unittest.TestCase):
         old = signal.getsignal(signal.SIGTERM), signal.getsignal(signal.SIGINT)
         with tempfile.TemporaryDirectory() as d, \
                 patch.object(player, 'Overlay', FakeOverlay), \
-                patch.object(player, 'probe', return_value=(info or {'codec_name': 'h264', 'width': 4, 'height': 2}, False)), \
+                patch.object(player, 'probe', return_value=(dict(index=0, **(info or
+                    {'codec_name': 'h264', 'width': 4, 'height': 2})), None)), \
                 patch.object(player.subprocess, 'Popen', return_value=proc), \
                 patch.object(player, 'write_status', side_effect=record), \
                 patch.object(player.frame_splat, 'render', return_value=(bytes(4*4*2), 4, 2)), \
@@ -268,6 +417,9 @@ class Media(unittest.TestCase):
         for name, layout, tags, expect in [
                 ('clip_SBS.mp4', 'auto', None, ('sbs', 'filename')),
                 ('clip.mkv', 'auto', {'stereo_mode': 'left_right'}, ('full-sbs', 'metadata')),
+                ('clip.mkv', 'auto', {'stereo_mode': 'right_left'}, ('full-sbs-rl', 'metadata')),
+                ('clip.mkv', 'auto', {'stereo_mode': 'bottom_top'}, ('full-ou-rl', 'metadata')),
+                ('clip_OU.mp4', 'sbs-rl', None, ('sbs-rl', 'explicit')),
                 ('clip_OU.mp4', 'sbs', None, ('sbs', 'explicit')),
                 ('clip.mkv', 'mono', {'stereo_mode': 'left_right'}, ('mono', 'explicit'))]:
             with self.subTest(name=name, layout=layout):
@@ -275,6 +427,32 @@ class Media(unittest.TestCase):
                 playing = self.writes[0]
                 self.assertEqual(playing['state'], 'playing')
                 self.assertEqual((playing['layout'], playing['source']), expect)
+
+    def test_player_submits_normalized_right_first_frames(self):
+        left, right = bytes([10, 20, 30, 255])*2, bytes([40, 50, 60, 255])*2
+        expected = (left+right)*2
+        for layout in ('sbs-rl', 'full-sbs-rl', 'ou-rl', 'full-ou-rl'):
+            packed_sbs = layout.startswith(('sbs', 'full-sbs'))
+            source = (right+left)*2 if packed_sbs else right*2+left*2
+            submitted, created = [], []
+            with self.subTest(layout=layout):
+                result, _ = self.play_with('clip.mp4', layout=layout, frame=source,
+                    info={'codec_name': 'h264', 'width': 4 if packed_sbs else 2,
+                          'height': 2 if packed_sbs else 4},
+                    on_frame=lambda handle, data, w, h: submitted.append((data, w, h)) if handle == 1 else None,
+                    on_create=lambda *args, **kw: created.append(args))
+                self.assertEqual(result['state'], 'ended')
+                self.assertEqual(submitted, [(expected, 4, 2)]*4)
+                self.assertTrue(created[1][3])  # the owned screen is stereoscopic
+                self.assertEqual(created[1][4], 1 if layout.startswith('full') else (2 if packed_sbs else .5))
+
+    def test_player_uses_probed_pixel_aspect_for_the_screen(self):
+        created = []
+        result, _ = self.play_with('clip.mp4', layout='full-sbs-rl',
+            info={'codec_name': 'h264', 'width': 4, 'height': 2, 'sample_aspect_ratio': '16:15'},
+            on_create=lambda *args, **kw: created.append(args))
+        self.assertEqual(result['state'], 'ended')
+        self.assertAlmostEqual(created[1][4], 16/15)
 
     def test_fake_frame_library_and_traversal(self):
         with tempfile.TemporaryDirectory() as d, patch.object(remote, 'ROOT', Path(d)):
@@ -302,6 +480,13 @@ class Media(unittest.TestCase):
                 with self.assertRaises(server.Failure):
                     server.media(body)
             ssh.assert_not_called()
+
+    def test_server_forwards_right_first_layouts_to_owned_runtime(self):
+        for layout in ('sbs-rl', 'ou-rl', 'full-sbs-rl', 'full-ou-rl'):
+            body = {'action': 'play', 'id': 'a'*32+'/photo.png', 'layout': layout}
+            with self.subTest(layout=layout), patch.object(server, 'ssh', side_effect=['', '{}']) as ssh:
+                server.media(body)
+                self.assertEqual(json.loads(ssh.call_args.kwargs['stdin']), body)
 
     def test_fake_frame_stop_only_owns_our_unit(self):
         for rc in (0, 5):  # 5: already collected ("not loaded"), a no-op

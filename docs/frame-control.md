@@ -85,7 +85,10 @@ counts them while they run.
   opens the store page in your browser, or Store on Frame opens it in the
   headset. It drives the Frame's own Steam client through its DevTools port;
   see [steam-games.md](steam-games.md).
-- **Volume** and mute (`wpctl`).
+- **Volume** and mute (`wpctl`). The Home slider sends its value after a short
+  pause. An older request finishing cannot release a newer slider draft to
+  status refreshes, including after a headset switch. Switching headsets
+  cancels a value that has not been sent yet.
 - **Android apps**: search about 4,500 F-Droid apps rated for the Frame, install
   one with a click as its own Lepton instance (it keeps its data and shows in the
   Steam library), then launch, stop, test or remove it.

@@ -294,7 +294,10 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description='Read-only Frame setup diagnostics. Never pairs, repairs or asks for a password.')
     parser.add_argument('--alias', default='frame', help='Existing trusted SSH alias (default: frame)')
     parser.add_argument('--lan', help='Optional LAN IP or host name; SteamOS 0.5.6 no longer publishes .local names')
-    parser.add_argument('--usb', default='10.86.200.233', help='USB fallback IP; use only with the intended headset connected')
+    usb = parser.add_mutually_exclusive_group()
+    usb.add_argument('--usb', default='10.86.200.233', help='USB fallback IP; use only with the intended headset connected')
+    usb.add_argument('--no-usb', dest='usb', action='store_const', const=None,
+                     help='Skip the USB fallback when the intended headset is not attached')
     parser.add_argument('--plan', action='store_true', help='Print a read-only repair plan from recognized evidence')
     parser.add_argument('--save-report', metavar='FILE', help='Create a local JSON baseline (never overwrite an existing file)')
     parser.add_argument('--compare-before', metavar='FILE', help='Compare a saved baseline with this fresh read-only run')
@@ -332,7 +335,8 @@ def main(argv=None):
     routes = [('configured alias (Tailscale if configured)', None)]
     if args.lan:
         routes.append(('LAN', args.lan))
-    routes.append(('USB-C', args.usb))
+    if args.usb:
+        routes.append(('USB-C', args.usb))
     for label, host in routes:
         result = run(ssh_args(args.alias, host, identity) + ['python3 -B - --probe'], timeout=90, input=source)
         if result is not None and result.returncode == 0:
@@ -368,7 +372,8 @@ def main(argv=None):
         print('WARN Connection (' + label + '): ' + reason)
     # No /register call: an open devkit port cannot prove pairing mode is enabled.
     hosts = (settings.get('hostname', args.alias), args.lan, args.usb)
-    if any(port_open(host, 32000) for host in hosts):
+    # A missing host resolves to loopback, which says nothing about the Frame.
+    if any(port_open(host, 32000) for host in hosts if host):
         print('WARN Pairing: Devkit port responds. Use Set Up Connection and Developer > Pair new host; no pairing request was sent.')
     else:
         print('UNKNOWN Pairing: Devkit port did not respond. Needs your hands: wake headset, enable Developer Mode and check its address.')

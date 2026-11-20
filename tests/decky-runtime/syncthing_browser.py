@@ -265,6 +265,80 @@ def ready_page(report, clock_start=None, pending=None, deadline=None):
     return None
 
 
+def wait_for_panel(browser, profile, report, bridge_started):
+    """Bound cold browser attachment and panel initialization separately.
+
+    TCG must first start Chromium and expose its page. That work is outside
+    the panel's own 60-second initialization allowance. Neither deadline is
+    renewed by a failed connection or a pending/replaced panel connection.
+    """
+    clock = report['startupClock']
+    connection_deadline = time.monotonic()+60
+    clock.update(browserConnectionBudgetSeconds=60,
+                 browserConnectionDeadlineAfterSeconds=round(connection_deadline-bridge_started, 3))
+    candidate = None
+    while time.monotonic() < connection_deadline:
+        if browser.poll() is not None:
+            raise RuntimeError('Sandboxed browser exited: '+str(browser.returncode))
+        port = profile/'DevToolsActivePort'
+        if port.is_file():
+            started = time.monotonic()
+            attempt = dict(phase='page-connect')
+            try:
+                frame_steam.CDP = 'http://127.0.0.1:'+port.read_text().splitlines()[0]+'/json'
+                candidate = frame_steam.Page('Owned Syncthing actual backend')
+                attempt['outcome'] = 'connected'
+            except (OSError, IndexError, frame_steam.Fail) as error:
+                attempt.update(outcome='failure', error=str(error)[:1500])
+                report['lastReadinessError'] = attempt['error']
+            finally:
+                attempt.update(startedAfterSeconds=round(started-bridge_started, 3),
+                               finishedAfterSeconds=round(time.monotonic()-bridge_started, 3))
+                attempts = report.setdefault('browserConnectionAttempts', [])
+                if len(attempts) < 16:
+                    attempts.append(attempt)
+                else:
+                    report['browserConnectionTraceOverflow'] = True
+                report['lastBrowserConnectionAttempt'] = attempt
+            if candidate is not None:
+                if time.monotonic() > connection_deadline:
+                    candidate.sock.close()
+                    candidate = None
+                    clock['lateBrowserConnectionRejected'] = True
+                break
+        time.sleep(.2)
+    clock.update(browserConnectionFinishedAfterSeconds=round(time.monotonic()-bridge_started, 3),
+                 browserConnected=candidate is not None)
+    assert candidate is not None, 'Browser CDP/panel readiness unavailable'
+
+    pending_pages = [candidate]
+    page = None
+    deadline = time.monotonic()+60
+    clock.update(readinessBudgetSeconds=60,
+                 readinessStartedAfterSeconds=round(time.monotonic()-bridge_started, 3),
+                 readinessDeadlineAfterSeconds=round(deadline-bridge_started, 3))
+    try:
+        while time.monotonic() < deadline:
+            if browser.poll() is not None:
+                raise RuntimeError('Sandboxed browser exited: '+str(browser.returncode))
+            page = ready_page(report, bridge_started, pending_pages, deadline)
+            if page is not None:
+                break
+            time.sleep(.2)
+    finally:
+        while pending_pages:
+            pending_pages.pop().sock.close()
+    finished = time.monotonic()
+    clock['readinessFinishedAfterSeconds'] = round(finished-bridge_started, 3)
+    if page is not None and finished > deadline:
+        page.sock.close()
+        page = None
+        clock['lateReadyPageRejected'] = True
+    clock['readinessPassed'] = page is not None
+    assert page is not None, 'Browser CDP/panel readiness unavailable'
+    return page
+
+
 def record_startup_progress(report, value, received_after):
     """Keep bounded fixed-field evidence; never accept it as a readiness gate."""
     if not isinstance(value, dict) or value.get('type') not in (
@@ -632,7 +706,6 @@ def exercise(legacy_rpc, runtime_identity, service, expected_api_key):
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     browser = page = None
-    pending_pages = []
     temporary = tempfile.TemporaryDirectory(prefix='framey-owned-browser-')
     report = {'success': False, 'syntheticInput': True, 'actualDeckyRpc': True,
               'installerEnabled': False, 'realFrameContacted': False,
@@ -641,7 +714,7 @@ def exercise(legacy_rpc, runtime_identity, service, expected_api_key):
               'documentSha256': {path: hashlib.sha256(text.encode()).hexdigest()
                                  for path, text in documents.items()},
               'panelSha256': hashlib.sha256(Path('/input/browser-panel.html').read_bytes()).hexdigest()}
-    clock = report['startupClock'] = dict(origin='bridge-monotonic', readinessBudgetSeconds=60)
+    clock = report['startupClock'] = dict(origin='bridge-monotonic')
     try:
         profile = Path(temporary.name)
         command = ['/usr/bin/chromium', '--headless', '--disable-gpu', '--no-first-run',
@@ -654,31 +727,7 @@ def exercise(legacy_rpc, runtime_identity, service, expected_api_key):
             clock['browserLaunchStartedAfterSeconds'] = round(time.monotonic()-bridge_started, 3)
             browser = subprocess.Popen(command, stdout=log, stderr=log, start_new_session=True)
             clock['browserLaunchReturnedAfterSeconds'] = round(time.monotonic()-bridge_started, 3)
-            deadline = time.monotonic()+60
-            clock['readinessDeadlineAfterSeconds'] = round(deadline-bridge_started, 3)
-            while time.monotonic() < deadline:
-                if browser.poll() is not None:
-                    raise RuntimeError('Sandboxed browser exited: '+str(browser.returncode))
-                port = profile/'DevToolsActivePort'
-                if port.is_file():
-                    try:
-                        frame_steam.CDP = 'http://127.0.0.1:'+port.read_text().splitlines()[0]+'/json'
-                        page = ready_page(report, bridge_started, pending_pages, deadline)
-                        if page is not None:
-                            break
-                    except (OSError, IndexError, frame_steam.Fail) as error:
-                        report['lastReadinessError'] = str(error)[:1500]
-                time.sleep(.2)
-            while pending_pages:
-                pending_pages.pop().sock.close()
-            finished = time.monotonic()
-            clock['readinessFinishedAfterSeconds'] = round(finished-bridge_started, 3)
-            if page is not None and finished > deadline:
-                page.sock.close()
-                page = None
-                clock['lateReadyPageRejected'] = True
-            clock['readinessPassed'] = page is not None
-            assert page is not None, 'Browser CDP/panel readiness unavailable'
+            page = wait_for_panel(browser, profile, report, bridge_started)
             first_pids = []
             for label, action in [('running', 'setup'), ('stopped', 'stop'), ('restarted', 'start'), ('stopped', 'stop')]:
                 page.eval('window.advance('+json.dumps(action)+','+json.dumps(expected_api_key)+')')
@@ -775,8 +824,6 @@ def exercise(legacy_rpc, runtime_identity, service, expected_api_key):
     finally:
         report.update(stages=stages, calls=calls, actualPackagedProcessObservations=observations,
                       documentRequests=list(document_requests), parentStartupProgress=parent_progress)
-        while pending_pages:
-            pending_pages.pop().sock.close()
         if page:
             page.sock.close()
         if browser:

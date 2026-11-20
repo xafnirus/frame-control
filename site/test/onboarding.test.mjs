@@ -14,13 +14,16 @@ function visit(navigator, hash = '') {
     tag: { hidden: true }, querySelector() { return this.tag; },
   }]));
   const details = { tagName: 'DETAILS', open: false };
+  details.closest = () => details;
+  const summary = { closest: () => details };
   const listeners = {};
   const context = {
     navigator, location: { hash }, window: { addEventListener: (name, fn) => { listeners[name] = fn; } },
     document: {
       querySelectorAll: () => [],
-      getElementById: id => id === 'hero-download' ? hero : id === 'mac-opening' ? details : null,
+      getElementById: id => id === 'hero-download' ? hero : id === 'mac-opening' ? details : id === 'mac-first-launch' ? summary : null,
       querySelector: selector => cards[selector.match(/data-os="([^"]+)"/)[1]],
+      addEventListener: (name, fn) => { listeners['document:' + name] = fn; },
     },
   };
   runInNewContext(script, context);
@@ -55,5 +58,13 @@ test('opening help expands for direct and in-page links; unknown fragments are s
   assert.equal(result.details.open, false);
   result.context.location.hash = '#mac-opening';
   result.listeners.hashchange();
+  assert.equal(result.details.open, true);
+});
+
+test('published FAQ fragments and repeated clicks reopen the containing answer', () => {
+  const result = visit({ userAgent: '' }, '#mac-first-launch');
+  assert.equal(result.details.open, true);
+  result.details.open = false;
+  result.listeners['document:click']({ target: { closest: () => ({ getAttribute: () => '#mac-first-launch' }) } });
   assert.equal(result.details.open, true);
 });

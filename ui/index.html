@@ -1870,8 +1870,10 @@
       <div class="row" style="margin-top:8px"><label for="mediaLayout">Layout</label>
         <select id="mediaLayout">
           <option value="auto">Detect from name or metadata</option><option value="mono">2D</option>
-          <option value="sbs">Half SBS · left / right</option><option value="ou">Half OU · top / bottom</option>
-          <option value="full-sbs">Full SBS · left / right</option><option value="full-ou">Full OU · top / bottom</option>
+          <option value="sbs">Half SBS · left eye on left</option><option value="ou">Half OU · left eye on top</option>
+          <option value="sbs-rl">Half SBS · right eye on left</option><option value="ou-rl">Half OU · right eye on top</option>
+          <option value="full-sbs">Full SBS · left eye on left</option><option value="full-ou">Full OU · left eye on top</option>
+          <option value="full-sbs-rl">Full SBS · right eye on left</option><option value="full-ou-rl">Full OU · right eye on top</option>
         </select></div>
       <div class="row" style="margin-top:8px"><label><input type="checkbox" id="mediaTheatre" checked>
         Theatre · bigger screen, dark surround</label></div>
@@ -2918,6 +2920,7 @@ $("vrUtilities").onclick = async e => {
 
 // The Frame owns the clock. Poll independently of the selected tab, from the first status check on.
 let comfortBusy = false, comfortSeen = new Set(), comfortSession = null, comfortHydrated = false, comfortActive = false;
+let comfortRevision = 0, comfortChanging = 0;
 async function localNotification(message, request = false) {
   try {
     if (window.frameApp?.notify) await window.frameApp.notify(message, request);
@@ -2982,18 +2985,33 @@ function renderComfort(s) {
   const history = (s.events || []).slice(-3).map(e => `${at(e.time)} ${e.message}`).join(" · ");
   if ($("comfortEvents").textContent !== history) $("comfortEvents").textContent = history;
 }
+async function changeComfort(label, body, button) {
+  // A status request already in flight describes the state before this action.
+  const revision = ++comfortRevision, generation = devGen;
+  comfortChanging++;
+  try {
+    const result = await act(label, () => api("/api/comfort", body), button);
+    if (result && revision === comfortRevision && generation === devGen) renderComfort(result);
+  } finally { comfortChanging--; }
+}
 async function pollComfort() {
   // Not while the Frame can't be reached: each poll would be another ssh attempt waiting to
   // time out, and the banner already says why. Status checks bring it back (setOnline).
   if (online === false) {
     const message = "Session status appears when the Frame is connected.";
     if ($("comfortStatus").textContent !== message) $("comfortStatus").textContent = message;
-  } else if (!comfortBusy) {
+  } else if (!comfortBusy && !comfortChanging) {
     comfortBusy = true;
-    try { renderComfort(await api("/api/comfort", {action: "status"})); }
+    const revision = comfortRevision, generation = devGen;
+    try {
+      const result = await api("/api/comfort", {action: "status"});
+      if (revision === comfortRevision && generation === devGen) renderComfort(result);
+    }
     catch (e) {
-      const message = "Session status unavailable: " + e.message;
-      if ($("comfortStatus").textContent !== message) $("comfortStatus").textContent = message;
+      if (!e.stale && revision === comfortRevision && generation === devGen) {
+        const message = "Session status unavailable: " + e.message;
+        if ($("comfortStatus").textContent !== message) $("comfortStatus").textContent = message;
+      }
     }
     finally { comfortBusy = false; }
   }
@@ -3001,15 +3019,13 @@ async function pollComfort() {
 }
 $("comfortForm").onsubmit = async e => {
   e.preventDefault();
-  const result = await act("Start session", () => api("/api/comfort", {
+  await changeComfort("Start session", {
     action: "start", minutes: Number($("sessionMinutes").value), breakMinutes: Number($("breakMinutes").value),
     stillMinutes: Number($("stillMinutes").value), batteryAlert: $("batteryAlert").checked, heatAlert: $("heatAlert").checked,
-  }), $("sessionStart"));
-  if (result) renderComfort(result);
+  }, $("sessionStart"));
 };
 $("sessionCancel").onclick = async () => {
-  const result = await act("Cancel session", () => api("/api/comfort", {action: "cancel"}), $("sessionCancel"));
-  if (result) renderComfort(result);
+  await changeComfort("Cancel session", {action: "cancel"}, $("sessionCancel"));
 };
 $("testNotification").onclick = () => act("Test notification", async () => {
   await localNotification("Comfort notifications are enabled on this device.", true);
@@ -3562,7 +3578,7 @@ document.querySelectorAll("[data-eye]").forEach(b => b.onclick = () => setEye(b.
 // Panels are "display/window": window ids are per X display, and the Frame has two.
 // desk.shown is the panel whose picture is on screen now; Control only acts on that one.
 // desk.why is the headset's own reason when it lists no panels; desk.error, why listing them failed.
-const desk = { panels: [], focus: null, pick: "", timer: null, loaded: false, shown: null, why: "", error: "" };
+const desk = { panels: [], focus: null, pick: "", timer: null, loaded: false, shown: null, why: "", error: "", request: 0, watch: 0 };
 const panelKey = p => p ? `${p.display}/${p.window}` : null;
 // Why the Desktop view has no panel to show: the headset's own reason when it gave one.
 function noPanelWhy() {
@@ -3575,9 +3591,11 @@ function deskPanel() {
   return desk.panels.find(p => panelKey(p) === want) || (!desk.pick && !desk.focus && desk.panels[0]) || null;
 }
 async function loadPanels() {
+  const request = ++desk.request;
   try {
     const before = panelKey(deskPanel());
     const r = await api("/api/panels");
+    if (request !== desk.request) return;
     desk.panels = r.panels || []; desk.loaded = true; desk.error = "";
     desk.why = r.why || "";
     desk.focus = r.focus ? `${r.focus_display}/${r.focus}` : null;
@@ -3587,7 +3605,7 @@ async function loadPanels() {
     if (view === "flat" && live && now !== before) { toggleLive(false); toggleLive(true); }
     ctrlShow();
   } catch (e) {
-    if (e.stale) return;  // an answer about the previous headset says nothing about this one
+    if (request !== desk.request || e.stale) return;
     // Polled every few seconds: waiting for the Frame, or the same failure again, isn't news.
     if (!e.offline && e.message !== desk.error) log("Couldn't list the headset's panels: " + e.message, "e");
     desk.error = e.message;
@@ -3595,9 +3613,11 @@ async function loadPanels() {
   }
 }
 function watchPanels() {
+  const watch = ++desk.watch;
   clearTimeout(desk.timer);
   if (view !== "flat") return;
-  loadPanels().finally(() => { if (view === "flat") desk.timer = setTimeout(watchPanels, document.hidden ? 10000 : 3000); });
+  loadPanels().finally(() => { if (view === "flat" && watch === desk.watch)
+    desk.timer = setTimeout(watchPanels, document.hidden ? 10000 : 3000); });
 }
 function renderPanelPick() {
   const sel = $("panelPick");
@@ -4259,9 +4279,11 @@ $("vol").oninput = () => {
   setVolume(+$("vol").value);
   clearTimeout(volTimer);
   const dev = window.connDevice;  // the headset whose slider this was, even 250 ms later
-  volTimer = setTimeout(async () => {
-    try { await api("/api/volume", { level: $("vol").value / 100 }, dev); } catch (e) { toast(e.message, true); }
-    volTimer = null;
+  const level = $("vol").value / 100;
+  const timer = volTimer = setTimeout(async () => {
+    try { await api("/api/volume", { level }, dev); } catch (e) { toast(e.message, true); }
+    // A newer input (possibly on another headset) owns its own pending draft.
+    if (volTimer === timer) volTimer = null;
   }, 250);
 };
 $("muteBtn").onclick = () => {
@@ -4364,8 +4386,16 @@ function upload(file, mode, dev = window.connDevice, backupToken = null, progres
 function copyToDownloads(file, path, dev) {
   return path ? api("/api/transfer", { action: "copy-local", path }, dev) : upload(file, "push", dev);
 }
+let mediaRefreshSeq = 0;
 async function refreshMedia(selectId) {
-  const data = await api("/api/media", { action: "list" });
+  const seq = ++mediaRefreshSeq, gen = devGen;
+  let data;
+  try { data = await api("/api/media", { action: "list" }); }
+  catch (error) {
+    if (seq !== mediaRefreshSeq || gen !== devGen || error.stale) return;
+    throw error;
+  }
+  if (seq !== mediaRefreshSeq || gen !== devGen) return;
   const selected = selectId || $("mediaFile").value;
   $("mediaFile").replaceChildren();
   if (!data.files.length) $("mediaFile").add(new Option("Send media to begin", ""));
@@ -8240,7 +8270,7 @@ function onConnection(s) {
     $("saveBtn").disabled = $("copyBtn").disabled = true;
     // Lists and their buttons (Remove, Launch…) were the other headset's: clear them
     // before anyone clicks one, until the new headset's arrive.
-    ["games", "titleList", "andApps", "flatpaks", "shotGrid", "gmGrid"].forEach(id => {
+    ["games", "titleList", "andApps", "flatpaks", "shotGrid", "gmGrid", "panelList"].forEach(id => {
       if ($(id)) $(id).innerHTML = `<div class="wait">Waiting for ${esc(s.device.name)}</div>`;
     });
     disp.list = []; disp.port = null;

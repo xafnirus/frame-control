@@ -10,6 +10,104 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 @unittest.skipUnless(shutil.which('node'), 'Node exercises the shared page JS')
 class ComfortUI(unittest.TestCase):
+    def test_late_status_cannot_overwrite_session_changes(self):
+        page = (ROOT / 'ui/index.html').read_text(encoding='utf-8')
+        api = page[page.index('let devGen ='):page.index('function setConn(')]
+        comfort = page[page.index('let comfortBusy ='):page.index('// Show a destination now,')]
+        setup = r'''
+const assert = require('node:assert/strict');
+const elements = new Map();
+const $ = id => {
+  const value = {sessionMinutes:'30',breakMinutes:'20',stillMinutes:'30'}[id] || '';
+  if (!elements.has(id)) elements.set(id, {textContent:'',hidden:true,disabled:false,
+    value,defaultValue:value,checked:true,defaultChecked:true,
+    type:/Alert$/.test(id)?'checkbox':'number'});
+  return elements.get(id);
+};
+const window = {connDevice:'one',frameApp:{notify:async()=>{notifications++;}}};
+const UI_KEY = 'test', log = ()=>{}, toast = ()=>{}, setTimeout = ()=>{};
+let online = true, notifications = 0;
+const requests = [];
+const fetch = (path, opts) => new Promise((resolve, reject) => {
+  requests.push({body:JSON.parse(opts.body),resolve,reject});
+});
+const reply = (request, value) => request.resolve({ok:true,json:async()=>value});
+const inactive = {id:'session',active:false,time:100,events:[]};
+const active = {...inactive,active:true,remaining:1800,
+  options:{minutes:30,breakMinutes:20,stillMinutes:30,batteryAlert:true,heatAlert:true}};
+'''
+        checks = r'''
+(async()=>{
+  const start = ACTION === 'start';
+  renderComfort(start ? inactive : active);
+  const pendingPoll = pollComfort();
+  assert.equal(requests.length,1);
+  const mutation = start ? $('comfortForm').onsubmit({preventDefault(){}})
+                         : $('sessionCancel').onclick();
+  assert.equal(requests[1].body.action,ACTION);
+  const duringMutation = pollComfort();
+  await duringMutation;
+  assert.equal(requests.length,2,'no status request while a session change is pending');
+  reply(requests[1],start ? active : inactive);
+  await mutation;
+  const expected = $('comfortStatus').textContent;
+  if (FAIL) requests[0].reject(Error('late network failure'));
+  else reply(requests[0],start ? inactive : active);
+  await pendingPoll;
+  assert.equal($('comfortStatus').textContent,expected,'old poll replaced the completed action');
+  assert.equal($('sessionStart').disabled,start);
+  assert.equal($('sessionCancel').disabled,!start);
+  assert.equal(notifications,0);
+  const next = pollComfort();
+  assert.equal(requests.length,3,'polling resumes after the change');
+  reply(requests[2],{...active,remaining:1200});
+  await next;
+  assert.match($('comfortStatus').textContent,/20 min/);
+  // No older poll is running now: the mutation itself must suppress new polls.
+  const failedCancel = $('sessionCancel').onclick();
+  assert.equal(requests.length,4);
+  await pollComfort();
+  assert.equal(requests.length,4);
+  requests[3].resolve({ok:false,status:500,json:async()=>({error:'Cancel failed'})});
+  await failedCancel;
+  assert.match($('comfortStatus').textContent,/20 min/);
+  const recovery = pollComfort();
+  reply(requests[4],inactive);
+  await recovery;
+  assert.equal($('sessionStart').disabled,false);
+  // The shared api rejects old-headset answers; the comfort error path must
+  // preserve the new headset's display rather than show "Switched headsets".
+  const switchingPoll = pollComfort();
+  devGen++;
+  window.connDevice = 'two';
+  $('comfortStatus').textContent = 'New headset';
+  if (FAIL) requests[5].reject(Error('old headset transport failed'));
+  else reply(requests[5],active);
+  await switchingPoll;
+  assert.equal($('comfortStatus').textContent,'New headset');
+  const newHeadsetPoll = pollComfort();
+  reply(requests[6],inactive);
+  await newHeadsetPoll;
+  assert.equal($('comfortStatus').textContent,'No session running.');
+  // A current failure still appears and a later poll can recover.
+  const currentFailure = pollComfort();
+  requests[7].resolve({ok:false,status:500,json:async()=>({error:'Status failed'})});
+  await currentFailure;
+  assert.equal($('comfortStatus').textContent,'Session status unavailable: Status failed');
+  const finalPoll = pollComfort();
+  reply(requests[8],inactive);
+  await finalPoll;
+  assert.equal($('comfortStatus').textContent,'No session running.');
+})().catch(e=>{console.error(e);process.exitCode=1;});
+'''
+        for action in ('start', 'cancel'):
+            for fail in (False, True):
+                with self.subTest(action=action, late_failure=fail):
+                    constants = f"const ACTION = '{action}', FAIL = {str(fail).lower()};\n"
+                    result = subprocess.run(['node', '-e', setup + constants + api + comfort + checks],
+                                            capture_output=True, text=True)
+                    self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_notification_failure_survives_poll_until_success(self):
         page = (ROOT / 'ui/index.html').read_text(encoding='utf-8')
         code = page[page.index('let comfortBusy ='):page.index('async function pollComfort()')]
@@ -110,7 +208,7 @@ assert.equal($('sessionMinutes').value, '50');  // later polls leave it alone
 const assert = require('node:assert/strict');
 const el = {textContent: 'Checking session…'};
 const $ = () => el;
-let online = false, comfortBusy = false, calls = 0, timers = 0;
+let online = false, comfortBusy = false, comfortChanging = 0, comfortRevision = 0, devGen = 0, calls = 0, timers = 0;
 const api = async () => { calls++; return {}; };
 const renderComfort = () => {};
 const setTimeout = () => { timers++; };

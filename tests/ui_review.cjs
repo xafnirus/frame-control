@@ -55,6 +55,36 @@ test('a device switch discards completed install results and the open detail',()
   assert.match(f.el('desktopBatteryStatus').textContent,/Off.*Headset changed/);
   assert.equal(c.sourceState.jobs.size,0);assert.equal(c.sourceState.detail,null);assert.equal(f.el('appDetail').open,false);
 });
+for (const lateFailure of [false,true]) test(`headset switch removes old panel actions before refresh (late failure: ${lateFailure})`,async()=>{
+  const f=connectionFixture(),c=f.context,requests=[];
+  Object.assign(c,{padReset(){},toast(){},setOnline(){},fetch:(path,opts)=>new Promise((resolve,reject)=>requests.push({path,opts,resolve,reject}))});
+  f.run(pick(html,'function failed(el, e) {','function setConn('));
+  f.run(pick(html,'let panelSeq = 0;','// ---- Read-only power observation'));
+  const response = panels => ({ok:true,json:async()=>({panels})});
+  const initial=f.el('panelsRefresh').onclick();
+  requests[0].resolve(response([{key:'valve.steam.desktopgame.12',title:'A private notes'}]));await initial;
+  assert.match(f.el('panelList').innerHTML,/A private notes/);
+  // Refreshing the same headset does not discard its existing list.
+  f.run('onConnection({phase:"connected",device:{id:"a",name:"A"},devices_rev:0,now:0})');
+  assert.match(f.el('panelList').innerHTML,/data-panel=/);
+  const old=f.el('panelsRefresh').onclick();
+  f.run('onConnection({phase:"connected",device:{id:"b",name:"B <Frame>"},devices_rev:1,now:0})');
+  assert.doesNotMatch(f.el('panelList').innerHTML,/data-panel=|A private notes/,'old Show actions must disappear immediately, before B answers');
+  assert.match(f.el('panelList').innerHTML,/Waiting for B &lt;Frame&gt;/);
+  assert.equal(requests.length,2,'switch reset must not issue a focus command');
+  if(lateFailure)requests[1].reject(Error('old headset transport failed'));
+  else requests[1].resolve(response([{key:'valve.steam.desktopgame.13',title:'A late panel'}]));
+  await old;
+  assert.doesNotMatch(f.el('panelList').innerHTML,/data-panel=|A late panel|transport failed/,'old read cannot restore the previous headset list');
+  const current=f.el('panelsRefresh').onclick();
+  requests[2].resolve(response([{key:'valve.steam.desktopgame.12',title:'B game'}]));await current;
+  assert.match(f.el('panelList').innerHTML,/B game/);
+  assert.doesNotMatch(f.el('panelList').innerHTML,/A private notes/);
+  f.el('panelList').onclick({target:{closest:()=>({dataset:{panel:'valve.steam.desktopgame.12'}})}});
+  assert.equal(requests[3].opts.headers['X-Frame-Device'],'b');
+  assert.deepEqual(JSON.parse(requests[3].opts.body),{action:'focus',key:'valve.steam.desktopgame.12'});
+  requests[3].resolve({ok:true,json:async()=>({message:'Asked SteamVR to show the panel.'})});await tick();
+});
 test('only a preview matching current diagnostics consent can be sent or copied',async()=>{
   const els=new Map(),$=id=>{if(!els.has(id))els.set(id,{checked:false,value:'',textContent:'',children:[]});return els.get(id);};let pending=[],sent;
   const c={$ ,api:(path,body)=>path==='/api/report/preview'?new Promise(resolve=>pending.push({body,resolve})):Promise.resolve({}),log(){},renderContact(){}};vm.createContext(c);

@@ -17,6 +17,16 @@ choose **Open panel** from the installed plugin list. The panel contains the
 plugin's own controls and settings. Update and Remove affect only plugin
 folders that Frame Control's store manager installed.
 
+Install, Update and Remove can restart the shared Decky service. After confirmation,
+Framey closes any open plugin panel before submitting the change, including a
+panel for a different plugin. It retires that panel's subscriptions and ignores
+late replies from its old session. Refresh installed status and reopen the panel
+to read saved settings again. Canceling confirmation keeps the panel open. A
+failed or uncertain change leaves it closed; use **Check result** when offered
+before reopening. Closing a panel does not cancel a backend save already sent
+or prove that it persisted. These lifecycle checks use the shipped parent script
+with synthetic replies; they add no live-headset or worn-VR proof.
+
 Update and Remove recheck ownership under the transaction lock using a regular
 store receipt file with a matching positive integer store ID. A symlinked,
 unreadable or malformed receipt cannot authorize a change. Refused operations
@@ -144,6 +154,14 @@ have no VR target. A plugin that depends on them can render only part of its UI
 or show an incompatibility message. A Decky plugin's Python backend still runs as
 the headset user when Decky loads it, so review third-party code before opting
 in. The panel iframe can make HTTPS requests subject to ordinary browser CORS.
+Decky's proxy networking remains unavailable. Legacy `serverAPI.fetchNoCors`
+resolves Decky's failure envelope, with `success: false` and a result explaining
+that proxy fetch is not supported on Frame. Modern API v1/v2 `fetchNoCors`
+rejects its promise. Neither fallback sends the request to a network or backend.
+The file picker is also unavailable. Modern `openFilePicker` and legacy
+`serverAPI.openFilePicker` / `openFilePickerV2` return rejected promises with
+"Decky file picker is not supported on Frame", so plugins can use their normal
+failure handlers. These methods do not select a path or browse headset files.
 
 ProtonDB Badges' current API v2 bundle rendered its settings in a local Chromium
 browser with a stubbed backend reply on 25 October 2026. Its controls accepted
@@ -170,7 +188,13 @@ work in VR. Storage Cleaner rendered an
 Its cleanup actions were not tested; they may remove local game saves.
 
 Framey also supplies local tabs/sidebar pages, spinners, dialog/menu wrappers
-and progress bars. `SidebarNavigation` preserves each visible page's React
+and progress bars. Its finite `DFL.IconsModule` supplies local `Search` and
+`WiredNetworkWarning` SVGs so SteamGridDB's search field and image-error view
+can render without dereferencing a missing namespace. These use local magnifier
+and warning artwork, with the plugin's SVG props and styles; they do not expose
+Steam's icon module. The exact published expressions render in a local browser,
+but real artwork requests, live settings persistence and worn use remain unverified.
+`SidebarNavigation` preserves each visible page's React
 `icon` beside its title in the local navigation button, including icon props
 and later updates. Separators and pages with `visible: false` do not become
 buttons. This is local page selection; it does not recreate Steam's sidebar
@@ -185,7 +209,14 @@ Direct IndexedDB users remain unsupported.
 
 `SuspensefulImage` renders a native image. SteamClient `Storage.GetJSON` and
 `SetObject` use the same bounded per-plugin cache, including panel reopen
-persistence; they do not read Steam's account/global JSON store. Missing keys
+persistence; they do not read Steam's account/global JSON store. `SetObject`
+waits for the parent to save its snapshot in browser storage before resolving.
+A rejected browser write rejects the call with an "only in memory" error;
+the current value remains available in the panel and through **Retry saving**.
+A missing reply rejects after five seconds, without claiming whether the write
+committed. Reopen the panel to read the saved value before another edit.
+This acknowledgement covers browser storage, not Decky's backend settings.
+Missing keys
 reject with `Not found`. The suspend store has no methods. Optional Steam app/account globals
 are undefined until a successful library read. These fallbacks let settings render without inventing live
 games or account identity. [The exact-bundle follow-up](evidence/framey-ui-fallbacks-2026-10-26.json)

@@ -8,8 +8,8 @@
 <meta name="theme-color" content="#0e141b">
 <link rel="icon" href="/favicon.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="stylesheet" href="/css/site.css">
-<script src="/js/site.js" defer></script>
+<link rel="stylesheet" href="/css/site.css?v=20261119-reconcile1">
+<script src="/js/site.js?v=20261119-reconcile1" defer></script>
 </head>
 <body>
 
@@ -28,7 +28,7 @@
         <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
         GitHub
       </a>
-      <a class="btn small coffee" data-kofi href="#" target="_blank" rel="noopener">Support</a>
+      <a class="btn small coffee" data-kofi hidden href="#" target="_blank" rel="noopener">Support</a>
     </div>
   </div>
 </header>
@@ -38,12 +38,14 @@
     <div class="head">
       <span class="kicker">Privacy</span>
       <h1>Privacy</h1>
-      <p>Short version: the app collects nothing, and the website keeps only what you choose to send.</p>
+      <p>Short version: the released app sends usage statistics after a first-run notice. You can turn them off. Website feedback becomes public on GitHub.</p>
     </div>
     <div class="faq notes">
-      <section><h2>The app</h2><p>Frame Control talks only to your headset (over SSH on your network), to GitHub for releases, and to Steam and F-Droid for game and app listings. It has no analytics and no accounts.</p></section>
-      <section><h2>The feedback form</h2><p>What you type becomes a public GitHub issue on <a href="https://github.com/saphid/frame-control/issues">saphid/frame-control</a>. To stop abuse, the form keeps a one-way hash of your IP address for about an hour to count submissions. The address itself isn't stored or published.</p></section>
-      <section><h2>This website</h2><p>Hosted on Cloudflare Pages. No cookies, no analytics, no trackers. The download section asks GitHub for the latest version number. Donations go through Ko-fi, under Ko-fi's own privacy policy.</p></section>
+      <section><h2>App usage statistics</h2><p>Released desktop builds send anonymous usage statistics to PostHog's US cloud by default after the first-run notice has been shown. Events include a random persistent installation ID, app version, operating system, CPU architecture and Python version; app opens, updates, tabs used, headset SteamOS builds and install outcomes. Public catalogue installs may include a Steam app ID, Flathub ID or F-Droid package name. Frame Control installation, update and daily-open events may include a country code derived from your computer's time zone; the time zone itself is not sent. A headset connection may include a shortened SHA-256 hash of its machine ID, computed on the headset, plus the number of saved headsets. The original machine ID stays on the headset.</p><p>Usage events exclude local filenames, paths and account data. Person profiles and location lookup are disabled, and events use a placeholder IP address; the receiving service still handles the network connection. Turn statistics off in <b>Privacy &amp; updates</b>. <b>Show what's been sent</b> shows recent sent events. Turning a level off removes its unsent events, not events already received.</p></section>
+      <section><h2>Optional reports and contact details</h2><p>Compatibility sharing and detailed error reports are off by default. Enabling compatibility sharing also sends earlier reports from this computer. Error details include scrubbed messages and tracebacks. Review free text before sharing: automatic scrubbing cannot guarantee that every personal detail is removed.</p><p><b>Report a problem</b> deliberately sends a private report to the maintainer's PostHog project, independently of usage-statistics settings. Diagnostics are included by default; recent activity and server logs are optional. A contact email and permission for follow-up questions are optional. <b>Contact email</b> lets you save, change or withdraw permission for follow-up questions and update notices. Changes saved offline wait until PostHog is reachable. Withdrawal removes the local address and excludes it from the maintainer's current contact list; earlier events remain until retention or separate deletion. These controls record consent; they do not establish that update emails are being delivered.</p><p>See the <a href="https://github.com/saphid/frame-control/blob/v0.4.62/docs/privacy.md">v0.4.62 privacy guide</a> for fields, retention and controls. Source checkouts do not send automatic telemetry by default. <code>DO_NOT_TRACK=1</code> or <code>FRAME_CONTROL_TELEMETRY=0</code> blocks automatic telemetry, not reports or contact changes you deliberately send.</p></section>
+      <section><h2>Other app connections</h2><p>Frame Control connects to your headset and to services used by the features you choose, including GitHub for releases, Steam, F-Droid and Flathub for listings or downloads, and the sources of apps you choose to install. It does not require a Frame Control account. The desktop app checks GitHub for updates after startup and every six hours; those requests carry no installation ID. Set <code>FRAME_CONTROL_NO_UPDATE_CHECK=1</code> to stop them.</p></section>
+      <section><h2>The website feedback form</h2><p>What you type becomes a public GitHub issue on <a href="https://github.com/saphid/frame-control/issues">saphid/frame-control</a>, including any username and diagnostic details you provide. Do not include passwords, tokens or private information. To stop abuse, the form keeps a token-salted, one-way hash of your IP address in an hourly counter for up to 65 minutes, plus a non-identifying daily counter for up to 25 hours. The form does not store or publish the raw address; Cloudflare still processes network requests.</p></section>
+      <section><h2>This website</h2><p>Hosted on Cloudflare Pages. The site itself sets no cookies and includes no analytics or tracking scripts. Cloudflare processes requests to serve and protect it. The download section asks GitHub for the latest release. Donations go through Ko-fi, under Ko-fi's own privacy policy.</p></section>
     </div>
   </div>
 </main>

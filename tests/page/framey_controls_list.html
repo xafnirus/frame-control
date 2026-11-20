@@ -13,6 +13,19 @@ addEventListener('unhandledrejection',event=>fixtureFailures.push(String(event.r
 (async () => {
   const result=document.getElementById('result'),container=document.getElementById('framey-modal');
   const assert=(value,message)=>{if(!value)throw Error(message);};
+  const assertLayout=(group,alignment,gap)=>{
+    const bounds=group.getBoundingClientRect();
+    const first=group.firstElementChild.getBoundingClientRect();
+    const last=group.lastElementChild.getBoundingClientRect();
+    // Computed alignment keywords differ between Chromium versions (for
+    // example flex-end/flow-end). Check the rendered positions instead.
+    const offset=alignment==='center'?(first.left+last.right-bounds.left-bounds.right)/2:
+      alignment==='right'?last.right-bounds.right:first.left-bounds.left;
+    assert(getComputedStyle(group).display==='flex'&&Math.abs(offset)<1,
+      alignment+' alignment lost: '+offset);
+    assert(getComputedStyle(group).gap===gap+'px'&&Math.abs(last.left-first.right-gap)<1,
+      alignment+' spacing lost');
+  };
   const settle=()=>new Promise(resolve=>setTimeout(resolve,20));
   const show=element=>{let handle;ReactDOM.flushSync(()=>{handle=DFL.showModal(element);});return handle;};
   const click=node=>ReactDOM.flushSync(()=>node.click());
@@ -43,15 +56,15 @@ addEventListener('unhandledrejection',event=>fixtureFailures.push(String(event.r
       React.createElement('button',{type:'button',disabled:true,onClick:()=>actions++},'Disabled action'));
     handle=show(content('center','extra'));await settle();
     let group=container.querySelector('[role=dialog]').lastElementChild;
-    assert(getComputedStyle(group).justifyContent==='center'&&getComputedStyle(group).gap==='16px','center/extra layout lost');
+    assertLayout(group,'center',16);
     click(group.children[0]);click(group.children[1]);
     assert(actions===1,'wrapper changed child callbacks/disabled state');
     ReactDOM.flushSync(()=>handle.Update(content('right','standard')));await settle();
     group=container.querySelector('[role=dialog]').lastElementChild;
-    assert(getComputedStyle(group).justifyContent==='flex-end'&&getComputedStyle(group).gap==='8px','right/standard layout lost');
+    assertLayout(group,'right',8);
     ReactDOM.flushSync(()=>handle.Update(content('left','standard')));await settle();
     group=container.querySelector('[role=dialog]').lastElementChild;
-    assert(getComputedStyle(group).justifyContent==='flex-start','left layout lost');
+    assertLayout(group,'left',8);
     ReactDOM.flushSync(()=>handle.Close());await handle.ClosedPromise;await settle();
     assert(document.activeElement===opener,'closing layout fixture lost focus');
     assert(fixtureFailures.length===0,fixtureFailures.join('; '));

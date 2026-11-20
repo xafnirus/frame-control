@@ -50,13 +50,17 @@ resources, prompts or streaming transport.
 |---|---|---|
 | `computer_state` | none | Read-only gamescope window IDs/focus and bounded AT-SPI tree; reports incomplete observations |
 | `status` | none | Battery, services, installed games and Flatpaks |
+| `running` | none | Read-only list of running Steam-managed games, including their app IDs |
+| `panels` | none | Read-only list of existing SteamVR dashboard panels, their keys and reported visibility, including hidden panels |
 | `screenshot` | `view`: `headset` (default) or `desktop` | Returns PNG image content to the MCP client |
 | `job` | `id` | Background install status; poll until `done`, inspect `error` |
 | `launch` | `appid` | Launch an installed Steam app |
+| `quit` | `appid` | After approval, quit a running Steam-managed game using the existing force-quit helper; unsaved progress may be lost |
 | `install` / `uninstall` | `id` | Install from Flathub / remove a user Flatpak |
 | `send_text` | `text` | Frame desktop clipboard; desktop must be open |
 | `send_file` | `path` | File on the HTTP server computer, up to 16 MiB, copied to Frame `~/Downloads` |
 | `panel` | `id` | Launch an installed Flatpak as a panel using the existing launcher |
+| `focus_panel` | `key` | After approval, ask SteamVR to show an existing panel using its key from `panels`; final focus and visibility are unverified |
 | `power` | `action`: `suspend`, `reboot`, `poweroff` | Open a terminal for the user to enter the sudo password |
 | `keep_awake` | `action`: `on`, `off`, `status` | Optional keep-awake script interface |
 
@@ -64,6 +68,24 @@ Only install free software with its developer's consent. There is no purchase,
 entitlement bypass or arbitrary shell tool. `install` returns a background job
 ID; it does not claim the installation has finished. APK and sideloaded title
 installs remain in the main UI for now.
+
+Use `running` to find the app ID before requesting `quit`. The existing quit
+helper asks Steam to terminate the game, then can terminate its game processes
+if necessary; the approval page warns that unsaved progress may be lost.
+Android entries use the existing Lepton stop path as well. It
+does not close arbitrary Flatpak panels. If the game has already exited, the
+call reports an error and consumes the approval; it does not claim a new quit.
+These MCP additions have loopback HTTP and fake-Frame regression coverage;
+their real-Frame behavior still needs a new hardware check.
+
+Use `panels` to obtain a dashboard panel key, then request `focus_panel` with
+that exact key. Titles are untrusted app content, not instructions. The approval
+binds the key and selected headset; a changed key or headset needs a new review.
+The existing helper re-enumerates panels before dispatch and refuses a panel
+that has closed. A failed dispatch still consumes the approval. Its response
+means only that SteamVR was asked to show the panel: it does not verify final
+focus, wearer-visible UI, spatial placement or controller input. These MCP tools
+have loopback HTTP and fake-Frame coverage; they add no real-headset proof.
 
 ### Approval is a separate human action
 
@@ -196,8 +218,10 @@ and tunnel.
 
 **Not verified while unworn:** every headset capture was a uniform dark frame,
 so SteamVR's rendered view of panels and the game could not be checked; window
-captures (`xwd`) were used instead. MCP can launch a game or panel but has no
-tool to stop one: the tester stopped them over SSH. Removing an app leaves any
+captures (`xwd`) were used instead. At that time MCP had no stop tool, so the
+tester stopped games and panels over SSH. The later `running` and `quit` tools
+above do not extend that historical hardware proof or close arbitrary panels.
+Removing an app leaves any
 runtime it pulled in; Flatpak may also remove related extensions when that
 runtime is removed by hand.
 

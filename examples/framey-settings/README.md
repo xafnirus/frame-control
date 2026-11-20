@@ -206,16 +206,21 @@ python3 scripts/framey-test-sample-browser.py \
 ```
 
 The replay loads this unchanged built frontend in the actual opaque Framey
-host. Its private test parent sends the rendered toggle and Reset confirmation's
-requests to published Decky 3.3.0 in a networkless container over stdin. It checks
-saved bytes and 0600 permissions, replaces the iframe to reopen the frontend,
-and repeats readback after two complete loader restarts. Seven screenshots,
+host through the shipped headset parent page. Its normal message handler and
+HTTP wrapper forward the rendered toggle and Reset confirmation's requests,
+including the plugin ID and pinned receipt. A private HTTP fixture connects
+those requests to published Decky 3.3.0 in a networkless container over stdin.
+It checks saved bytes and 0600 permissions, uses the parent's close/open path
+to reopen the frontend, and repeats readback after two complete loader restarts
+and a full parent-page reload. Eight screenshots,
 the real RPC transcript and recorded parent-only stops remain in the output.
 The Linux AMD64 CI job requires this replay; native backend-only restart tests
 continue to run on AMD64 and ARM64.
 
-The parent, ownership receipt and DOM input are synthetic. This does not test
-Frame's production HTTP/SSH parent, ARM64 browser behavior, a live headset,
+The parent page and iframe sandbox are unchanged; only observation/input hooks
+are appended. HTTP responses, the Steam CEF connection, ownership receipt and
+DOM input are synthetic. This does not test Frame's production HTTP/SSH service,
+ARM64 browser behavior, a live headset,
 physical controllers, scrolling, the VR keyboard or visibility in worn VR.
 
 ## Decky 3.3.0 child IPC lifetime

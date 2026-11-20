@@ -5,6 +5,15 @@ headset view and live video, battery and status, screenshots, Steam games,
 Android apps and their display settings, sideloading, files, clipboard,
 Flatpaks, and power. Source: [`ios/`](../ios).
 
+## Get the beta
+
+[Join the public TestFlight beta](https://testflight.apple.com/join/9xjW91g6)
+on your iPhone or iPad. Install Apple's TestFlight app, then open the invitation
+and follow its instructions. You need a reachable Steam Frame with Developer
+Mode enabled and a Developer Mode user password set. See [Pairing](#pairing)
+below for the connection steps. A Mac and Xcode are needed only to build from
+source, not to install through TestFlight.
+
 ## How it works
 
 An iPhone can't run Python or `ssh`, but the Frame can. So the app:

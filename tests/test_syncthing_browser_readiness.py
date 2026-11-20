@@ -11,14 +11,6 @@ class BrowserReadiness(unittest.TestCase):
     def setUp(self):
         source = Path(__file__).parent/'decky-runtime/syncthing_browser.py'
         tree = ast.parse(source.read_text())
-        exercise = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == 'exercise')
-        block = next(n for n in ast.walk(exercise) if isinstance(n, ast.With)
-                     and any(isinstance(s, ast.While) for s in n.body))
-        start = next(i for i, n in enumerate(block.body) if isinstance(n, ast.Assign)
-                     and isinstance(n.targets[0], ast.Name) and n.targets[0].id == 'deadline')
-        end = next(i for i, n in enumerate(block.body[start:], start) if isinstance(n, ast.Assert))
-        wrapper = ast.parse('def wait(browser, profile, report):\n page = None\n pending_pages = []\n return page').body[0]
-        wrapper.body[2:2] = block.body[start:end+1]
         self.now = 0
         self.on_sleep = lambda: None
         def sleep(seconds):
@@ -28,10 +20,10 @@ class BrowserReadiness(unittest.TestCase):
         scope = dict(time=SimpleNamespace(monotonic=lambda: self.now, sleep=sleep),
                      frame_steam=self.backend, bridge_started=0, clock={})
         helpers = [n for n in tree.body
-                   if isinstance(n, ast.FunctionDef) and n.name == 'ready_page']
-        exec(compile(ast.fix_missing_locations(ast.Module(body=helpers+[wrapper], type_ignores=[])),
+                   if isinstance(n, ast.FunctionDef) and n.name in ('ready_page', 'wait_for_panel')]
+        exec(compile(ast.fix_missing_locations(ast.Module(body=helpers, type_ignores=[])),
                      str(source), 'exec'), scope)
-        self.wait = scope['wait']
+        self.wait = lambda browser, profile, report: scope['wait_for_panel'](browser, profile, report, 0)
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.profile = Path(self.temporary.name)
@@ -51,7 +43,7 @@ class BrowserReadiness(unittest.TestCase):
         self.on_sleep = lambda: self.port.write_text('12345\nfixture')
         self.assertIs(self.wait(self.browser, self.profile, self.report), page)
         self.assertGreater(self.now, 0)
-        self.assertEqual(self.report['startupClock']['readinessDeadlineAfterSeconds'], 60)
+        self.assertEqual(self.report['startupClock']['readinessDeadlineAfterSeconds'], 60.2)
         self.assertTrue(self.report['startupClock']['readinessPassed'])
         self.assertEqual(self.backend.CDP, 'http://127.0.0.1:12345/json')
         self.backend.Page.assert_called_once()
@@ -70,9 +62,9 @@ class BrowserReadiness(unittest.TestCase):
             self.wait(self.browser, self.profile, self.report)
         self.assertGreaterEqual(self.now, 60)
         self.assertLess(self.now, 61)
-        self.assertEqual(self.report['startupClock']['readinessDeadlineAfterSeconds'], 60)
-        self.assertFalse(self.report['startupClock']['readinessPassed'])
-        self.assertGreaterEqual(self.report['startupClock']['readinessFinishedAfterSeconds'], 60)
+        self.assertEqual(self.report['startupClock']['browserConnectionDeadlineAfterSeconds'], 60)
+        self.assertFalse(self.report['startupClock']['browserConnected'])
+        self.assertNotIn('readinessDeadlineAfterSeconds', self.report['startupClock'])
         self.backend.Page.assert_not_called()
 
     def test_exited_browser_keeps_distinct_failure(self):
@@ -135,9 +127,9 @@ class BrowserReadiness(unittest.TestCase):
         self.assertEqual(self.report['startupState'], dict(state=None,
                          documentState='loading', iframeAssigned=False))
         attempts = self.report['readinessAttempts']
-        self.assertEqual(attempts[0]['error'], 'page not listed yet')
-        self.assertEqual(attempts[1]['outcome'], 'not-ready')
-        self.assertNotIn('error', attempts[1])
+        self.assertEqual(self.report['browserConnectionAttempts'][0]['error'], 'page not listed yet')
+        self.assertEqual(attempts[0]['outcome'], 'not-ready')
+        self.assertNotIn('error', attempts[0])
         self.assertEqual(self.report['lastReadinessAttempt']['outcome'], 'ready')
         self.assertNotIn('error', self.report['lastReadinessAttempt'])
 
@@ -153,7 +145,7 @@ class BrowserReadiness(unittest.TestCase):
         # round trip; diagnostics must not add another startup evaluation.
         self.assertEqual(page.eval.call_count, 2)
         self.assertEqual([a['connectionReused'] for a in self.report['readinessAttempts']],
-                         [False, True])
+                         [True, True])
 
     def test_pending_connection_is_closed_once_when_readiness_expires(self):
         self.port.write_text('12345\nfixture')
@@ -187,6 +179,57 @@ class BrowserReadiness(unittest.TestCase):
         self.assertTrue(self.report['startupClock']['lateReadyPageRejected'])
         self.assertTrue(self.report['lastReadinessAttempt']['connectionReused'])
 
+
+    def test_cold_connection_does_not_consume_the_panels_own_budget(self):
+        self.port.write_text('12345\nfixture')
+        page = self.ready_page()
+        def cold_connection(_title):
+            self.now = 30.328
+            return page
+        self.backend.Page.side_effect = cold_connection
+        def panel_ready(_expression):
+            self.now = 60.460
+            return dict(ready=True)
+        page.eval.side_effect = panel_ready
+        self.assertIs(self.wait(self.browser, self.profile, self.report), page)
+        clock = self.report['startupClock']
+        self.assertEqual(clock['browserConnectionDeadlineAfterSeconds'], 60)
+        self.assertEqual(clock['readinessDeadlineAfterSeconds'], 90.328)
+        self.assertTrue(clock['readinessPassed'])
+
+    def test_connection_finishing_after_its_own_deadline_is_rejected(self):
+        self.port.write_text('12345\nfixture')
+        page = self.ready_page()
+        def late_connection(_title):
+            self.now = 60.001
+            return page
+        self.backend.Page.side_effect = late_connection
+        with self.assertRaisesRegex(AssertionError, 'Browser CDP/panel readiness unavailable'):
+            self.wait(self.browser, self.profile, self.report)
+        page.sock.close.assert_called_once()
+        page.eval.assert_not_called()
+        self.assertFalse(self.report['startupClock']['browserConnected'])
+
+    def test_panel_cannot_extend_its_deadline_by_reconnecting(self):
+        self.port.write_text('12345\nfixture')
+        initial, replacement = Mock(), Mock()
+        def pages(_title):
+            if self.backend.Page.call_count == 1:
+                self.now = 30
+                return initial
+            return replacement
+        self.backend.Page.side_effect = pages
+        initial.eval.side_effect = OSError('owned connection closed')
+        def late_ready(_expression):
+            self.now = 90.001
+            return dict(ready=True)
+        replacement.eval.side_effect = late_ready
+        with self.assertRaisesRegex(AssertionError, 'Browser CDP/panel readiness unavailable'):
+            self.wait(self.browser, self.profile, self.report)
+        initial.sock.close.assert_called_once()
+        replacement.sock.close.assert_called_once()
+        self.assertEqual(self.report['startupClock']['readinessDeadlineAfterSeconds'], 90)
+        self.assertFalse(self.report['startupClock']['readinessPassed'])
 
     def execute_snapshot_javascript(self, expression, *, initial_ready=False, event='ready'):
         import json

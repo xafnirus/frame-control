@@ -24,13 +24,16 @@ let session=vm.runInContext('frameySession',parent);
 const firstURL=new URL(el('frameyFrame').src,'http://127.0.0.1');
 const onParent=parentListeners.find(x=>x.type==='message').fn;
 
-function iframe({delaySeed=false}={}){
-  const listeners=[];const queued=[];const timers=[];let live=false,bundleReads=0;
+function iframe({delaySeed=false,delayCommit=false}={}){
+  const listeners=[];const queued=[];const commits=[];const timers=[];let live=false,bundleReads=0;
   const frameWindow={location:{hash:`#${session}`},React:{Fragment:'fragment',Component:class {},forwardRef:render=>render,createElement:()=>({}),isValidElement:()=>true},
     ReactDOM:{createRoot:()=>({render(){}})}};
   const proxy={postMessage:message=>listeners.find(x=>x.type==='message')?.fn({source:hostParent,data:message})};
   el('frameyFrame').contentWindow=proxy;
-  const hostParent={postMessage:message=>live?onParent({source:proxy,data:message}):queued.push(message)};
+  const hostParent={postMessage:message=>{
+    if(delayCommit&&message.type==='framey:cache:commit'){commits.push(message);return;}
+    return live?onParent({source:proxy,data:message}):queued.push(message);
+  }};
   const context=vm.createContext({window:frameWindow,document:{getElementById:id=>{if(id==='framey-bundle')bundleReads++;return {};}},
     navigator:{language:'en'},parent:hostParent,DOMException,
     addEventListener:(type,fn)=>listeners.push({type,fn}),
@@ -44,6 +47,7 @@ function iframe({delaySeed=false}={}){
   const send=message=>onParent({source:proxy,data:message});
   return {storage:frameWindow.localStorage,steamStorage:frameWindow.SteamClient.Storage,
     evaluate:source=>vm.runInContext(source,context),
+    flushCommit:()=>{for(const message of commits)onParent({source:proxy,data:message});commits.length=0;},
     waitForSeed:frameWindow.__waitForSeed,start:frameWindow.__start,get bundleReads(){return bundleReads;},timers,flushSeed,send,receive:message=>
       listeners.find(x=>x.type==='message').fn({source:hostParent,data:message})};
 }
@@ -186,6 +190,21 @@ assert.equal(values.get('framey-plugin-cache-v1:14'),'{"status-cache":"{\\"onlin
 first.storage.setItem('temporary','discard');
 first.storage.removeItem('temporary');
 await first.steamStorage.SetObject('playtime-settings',{count:3});
+// Async settings writes must wait for the actual parent storage result. A
+// local iframe assignment alone cannot acknowledge a save across page reload.
+const delayedCommit=iframe({delayCommit:true});
+let committed=false;
+const commit=delayedCommit.steamStorage.SetObject('playtime-settings',{count:4}).then(()=>{committed=true;});
+await Promise.resolve();
+assert.equal(committed,false,'SetObject resolved before the parent received its snapshot');
+assert.equal(JSON.parse(values.get('framey-plugin-cache-v1:14'))['steam-client:playtime-settings'],'{"count":3}');
+delayedCommit.flushCommit();
+await commit;
+assert.equal(committed,true);
+assert.equal(JSON.parse(values.get('framey-plugin-cache-v1:14'))['steam-client:playtime-settings'],'{"count":4}');
+const staleCommit=iframe({delayCommit:true});
+const staleSave=staleCommit.steamStorage.SetObject('playtime-settings',{count:5});
+const staleFailure=assert.rejects(staleSave,/Could not confirm saved plugin settings/);
 const oldSession=session;
 vm.runInContext('openFrameyPanel(14,"Steam Status")',parent);
 session=vm.runInContext('frameySession',parent);
@@ -196,10 +215,16 @@ assert.notEqual(reopenedURL.pathname+reopenedURL.search,firstURL.pathname+firstU
 assert.equal(reopenedURL.searchParams.get('session'),session);
 assert.equal(reopenedURL.hash.slice(1),session);
 let reopened=iframe();
+staleCommit.flushCommit();
+const commitTimer=staleCommit.timers.find(timer=>timer.active&&timer.ms===5000);
+assert.ok(commitTimer,'unacknowledged saves need a bounded wait');
+commitTimer.callback();
+await staleFailure;
+staleCommit.receive({type:'framey:reply',id:1}); // Late replies cannot revive a timed-out save.
 assert.equal(reopened.storage.getItem('status-cache'),'{"online":true}');
 assert.equal(reopened.storage.length,2);
 assert.equal(reopened.storage.key(0),'status-cache');
-assert.equal(await reopened.steamStorage.GetJSON('playtime-settings'),'{"count":3}');
+assert.equal(await reopened.steamStorage.GetJSON('playtime-settings'),'{"count":4}');
 assert.throws(()=>reopened.storage.setItem('huge','x'.repeat(65537)),/Framey plugin cache is full/);
 // A malformed or over-limit message from a plugin must not poison saved data.
 const savedCache=values.get('framey-plugin-cache-v1:14');
@@ -207,6 +232,9 @@ reopened.send({type:'framey:cache:save',session,entries:{huge:'x'.repeat(65537)}
 assert.equal(values.get('framey-plugin-cache-v1:14'),savedCache);
 reopened.send({type:'framey:cache:save',session:oldSession,entries:{poison:'yes'}});
 assert.equal(values.get('framey-plugin-cache-v1:14'),savedCache);
+reopened.send({type:'framey:cache:commit',session:oldSession,id:99,method:'save',args:[{poison:'yes'}]});
+reopened.send({type:'framey:cache:commit',session,id:99,method:'save',args:[{huge:'x'.repeat(65537)}]});
+assert.equal(values.get('framey-plugin-cache-v1:14'),savedCache,'invalid or stale commits must preserve saved data');
 reopened.storage.clear();
 assert.equal(values.get('framey-plugin-cache-v1:14'),'{}');
 
@@ -291,7 +319,7 @@ assert.equal(el('frameyCacheWarning').hidden,false,'reopen must keep the unsaved
 deniedReopen.send({type:'framey:scroll:result',session,direction:'down',moved:true});
 deniedReopen.send({type:'framey:error',session,message:'Synthetic unrelated panel error'});
 assert.equal(el('frameyCacheWarning').hidden,false,'other panel status messages must not hide failed saves');
-await deniedReopen.steamStorage.SetObject('settings',{enabled:true});
+await assert.rejects(deniedReopen.steamStorage.SetObject('settings',{enabled:true}),/only in memory/);
 deniedReopen.send({type:'framey:cache:save',session,entries:{huge:'x'.repeat(65537)}});
 
 // Reopening another plugin cannot see the failed write or clear its cache.

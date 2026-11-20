@@ -99,6 +99,18 @@ count. So a build reaches people only when you publish it, after testing it.
    these diagnostics do not qualify package installation or explain an older
    timeout that did not record them.
 
+   The signed-package browser fixture gives cold Chromium attachment and panel
+   initialization separate 60-second allowances. The panel allowance starts
+   after the owned CDP page connects, and reconnecting never renews it. The
+   report retains both deadlines and rejects readiness observed after either
+   applicable deadline. This changes the fixture's aggregate startup limit
+   from 60 to at most 120 seconds, excluding a socket call returning late,
+   which is rejected. It does not change production RPC deadlines or the
+   subsequent setup, signed-service, sync, sandbox and cleanup assertions.
+   Keep earlier failed runs visible; changing this timing policy does not
+   repair a product defect or qualify a release without a new passing exact
+   source run and all other release gates.
+
    Supply the saved smoke result to the publisher. Both its dry run and publish
    command reject a result from another or dirty commit, incomplete title or
    cleanup steps, a skip or failure, or an unconfirmed headset lock release:

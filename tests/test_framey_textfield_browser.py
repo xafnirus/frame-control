@@ -1,5 +1,6 @@
 """Real React/DOM text-field contracts with private, network-blocked pages."""
 import sandbox  # noqa: F401
+import contextlib
 import hashlib
 import html
 import io
@@ -54,6 +55,19 @@ def run_browser(command, timeout=30):
     try:
         stdout, stderr = process.communicate(timeout=timeout)
         return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
+    except subprocess.TimeoutExpired as failure:
+        # TimeoutExpired retains partial pipe output, but its traceback omits
+        # it. Keep bounded evidence before the existing owned-group cleanup.
+        report = dict(timeoutSeconds=timeout, launcherReturnCode=process.poll())
+        for stream in ('stdout', 'stderr'):
+            raw = getattr(failure, stream) or b''
+            if isinstance(raw, str):
+                raw = raw.encode('utf-8', errors='replace')
+            report[stream+'Bytes'] = len(raw)
+            report[stream+'Tail'] = raw[-4096:].decode('utf-8', errors='replace')
+            report[stream+'Truncated'] = len(raw) > 4096
+        print('FRAMEY_BROWSER_TIMEOUT_JSON='+json.dumps(report), file=sys.stderr, flush=True)
+        raise
     finally:
         try:
             os.killpg(process.pid, signal.SIGKILL)
@@ -77,14 +91,29 @@ class BrowserCleanup(unittest.TestCase):
     def test_timeout_stops_child_holding_output_and_profile(self):
         with tempfile.TemporaryDirectory(prefix='framey-clear-cleanup-') as folder:
             ready = Path(folder)/'child.pid'
-            child = ('import os,time; from pathlib import Path; '
+            child = ('import os,sys,time; from pathlib import Path; '
                      'profile=Path('+repr(folder)+')/"profile"; profile.mkdir(); '
                      '(profile/"owned").write_text("fixture"); '
-                     'Path('+repr(str(ready))+').write_text(str(os.getpid())); time.sleep(60)')
+                     'Path('+repr(str(ready))+').write_text(str(os.getpid())); '
+                     'sys.stdout.buffer.write(("A"*8192+"STDOUT-æ").encode()); sys.stdout.flush(); '
+                     'sys.stderr.buffer.write(("B"*8192+"STDERR-ø").encode()); sys.stderr.flush(); '
+                     'time.sleep(60)')
             parent = ('import subprocess,sys; child=subprocess.Popen([sys.executable,"-c",'
                       + repr(child) + ']); child.wait()')
-            with self.assertRaises(subprocess.TimeoutExpired):
+            diagnostics = io.StringIO()
+            with contextlib.redirect_stderr(diagnostics), self.assertRaises(subprocess.TimeoutExpired) as raised:
                 run_browser([sys.executable, '-c', parent], timeout=2)
+            self.assertEqual(raised.exception.timeout, 2)
+            line = diagnostics.getvalue().strip()
+            self.assertTrue(line.startswith('FRAMEY_BROWSER_TIMEOUT_JSON='), line)
+            report = json.loads(line.split('=', 1)[1])
+            self.assertEqual(report['timeoutSeconds'], 2)
+            self.assertIsNone(report['launcherReturnCode'])
+            for stream, marker in [('stdout', 'STDOUT-æ'), ('stderr', 'STDERR-ø')]:
+                self.assertTrue(report[stream+'Tail'].endswith(marker), report)
+                self.assertLessEqual(len(report[stream+'Tail'].encode()), 4096)
+                self.assertGreater(report[stream+'Bytes'], 8192)
+                self.assertTrue(report[stream+'Truncated'])
             self.assertTrue(ready.is_file(), 'child must have started before the timeout')
             status = Path('/proc')/ready.read_text()/'stat'
             if status.exists():

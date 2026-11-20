@@ -1,0 +1,242 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-20",
+  "sourceHead": "ef41bbb2d85256a73f2aecb98f2de7cefb4f455a",
+  "run": "https://github.com/saphid/frame-control/actions/runs/44664045875",
+  "plugin": {
+    "id": 66,
+    "version": "3.2.5",
+    "sha256": "10fc3beea48991c77cb02867e919b618d4cd6d5e9c6a6d0ccd5266c13214039f"
+  },
+  "architectures": [
+    {
+      "architecture": "x86_64",
+      "artifactId": 14597483520,
+      "artifactUrl": "https://github.com/saphid/frame-control/actions/runs/44664045875/artifacts/14597483520",
+      "artifactZipSha256": "3ed393a3eea1069c86c30df15b48d87ce19bbfb75899856dead509b66ff630fb",
+      "reportSha256": "245d3066aacaa6f659aa18d37d85cd5a7d2a07a691df5a1c30329ba347c11637",
+      "loaderSha256": "e80d03e641d1766a33a817cb27ab8d2e0a4633685e5d27e4de948a6687526181",
+      "sourceFingerprintsMatched": 62,
+      "pythonMemberHashesMatched": 40,
+      "literalRpcResultsMatched": 22,
+      "sqlReadbacksMatched": 6,
+      "ownedLoaderStops": [
+        {
+          "returncode": 0,
+          "elapsedSeconds": 0.21406907300001876,
+          "parentOnlySignal": true,
+          "ownedProcessCount": 5,
+          "adoptedChildExits": [
+            {
+              "pid": 20,
+              "returncode": 0
+            },
+            {
+              "pid": 21,
+              "returncode": 0
+            }
+          ],
+          "ownedProcessIdentitiesReaped": true
+        },
+        {
+          "returncode": 0,
+          "elapsedSeconds": 0.21408120099999906,
+          "parentOnlySignal": true,
+          "ownedProcessCount": 5,
+          "adoptedChildExits": [
+            {
+              "pid": 34,
+              "returncode": 0
+            },
+            {
+              "pid": 35,
+              "returncode": 0
+            }
+          ],
+          "ownedProcessIdentitiesReaped": true
+        }
+      ],
+      "independentDatabaseAudit": [
+        {
+          "user": "76561198000000001",
+          "sha256": "ece0f50c5fb99d1304890ee0cea2bb421f3aa65f34480ee5507a3e20cd1b3026",
+          "bytes": 114688,
+          "integrity": "ok",
+          "rows": {
+            "games": [
+              [
+                "424242",
+                "Private Alice game"
+              ]
+            ],
+            "sessions": [
+              [
+                "424242",
+                300
+              ]
+            ],
+            "totals": [
+              [
+                "424242",
+                300
+              ]
+            ],
+            "tracking": []
+          },
+          "snapshotBytesUnchanged": true
+        },
+        {
+          "user": "76561198000000002",
+          "sha256": "00e740f473644b869e7cad94ce8f1ba48a35dac8c35aa1708784b2a00217d107",
+          "bytes": 114688,
+          "integrity": "ok",
+          "rows": {
+            "games": [
+              [
+                "424242",
+                "Private Bob game"
+              ]
+            ],
+            "sessions": [
+              [
+                "424242",
+                600
+              ]
+            ],
+            "totals": [
+              [
+                "424242",
+                600
+              ]
+            ],
+            "tracking": []
+          },
+          "snapshotBytesUnchanged": true
+        }
+      ],
+      "outerGenericCleanShutdownFlag": false
+    },
+    {
+      "architecture": "aarch64",
+      "artifactId": 14597488237,
+      "artifactUrl": "https://github.com/saphid/frame-control/actions/runs/44664045875/artifacts/14597488237",
+      "artifactZipSha256": "0a5133074bd9b4a18e9d7b07432c92df1f9f9dd6009ea8a1b0278fff5991177d",
+      "reportSha256": "c07c0f887ab0ff4ecd9908d229daa5a950e2192bf234b0cecef591732c9000e5",
+      "loaderSha256": "8ef5dcf36cbbbb6e97201a6baed5d79c4cc44ec27789fc9af1c5b6ae8f0b25b6",
+      "sourceFingerprintsMatched": 62,
+      "pythonMemberHashesMatched": 40,
+      "literalRpcResultsMatched": 22,
+      "sqlReadbacksMatched": 6,
+      "ownedLoaderStops": [
+        {
+          "returncode": 0,
+          "elapsedSeconds": 0.21401887299998634,
+          "parentOnlySignal": true,
+          "ownedProcessCount": 5,
+          "adoptedChildExits": [
+            {
+              "pid": 20,
+              "returncode": 0
+            },
+            {
+              "pid": 21,
+              "returncode": 0
+            }
+          ],
+          "ownedProcessIdentitiesReaped": true
+        },
+        {
+          "returncode": 0,
+          "elapsedSeconds": 0.21407147799999393,
+          "parentOnlySignal": true,
+          "ownedProcessCount": 5,
+          "adoptedChildExits": [
+            {
+              "pid": 34,
+              "returncode": 0
+            },
+            {
+              "pid": 35,
+              "returncode": 0
+            }
+          ],
+          "ownedProcessIdentitiesReaped": true
+        }
+      ],
+      "independentDatabaseAudit": [
+        {
+          "user": "76561198000000001",
+          "sha256": "ece0f50c5fb99d1304890ee0cea2bb421f3aa65f34480ee5507a3e20cd1b3026",
+          "bytes": 114688,
+          "integrity": "ok",
+          "rows": {
+            "games": [
+              [
+                "424242",
+                "Private Alice game"
+              ]
+            ],
+            "sessions": [
+              [
+                "424242",
+                300
+              ]
+            ],
+            "totals": [
+              [
+                "424242",
+                300
+              ]
+            ],
+            "tracking": []
+          },
+          "snapshotBytesUnchanged": true
+        },
+        {
+          "user": "76561198000000002",
+          "sha256": "00e740f473644b869e7cad94ce8f1ba48a35dac8c35aa1708784b2a00217d107",
+          "bytes": 114688,
+          "integrity": "ok",
+          "rows": {
+            "games": [
+              [
+                "424242",
+                "Private Bob game"
+              ]
+            ],
+            "sessions": [
+              [
+                "424242",
+                600
+              ]
+            ],
+            "totals": [
+              [
+                "424242",
+                600
+              ]
+            ],
+            "tracking": []
+          },
+          "snapshotBytesUnchanged": true
+        }
+      ],
+      "outerGenericCleanShutdownFlag": false
+    }
+  ],
+  "limits": {
+    "automaticRecordingVerified": false,
+    "liveSettingsPanelVerified": false,
+    "realFrameContacted": false,
+    "wornVisibilityVerified": false,
+    "physicalControllerVerified": false,
+    "scrollingVerified": false,
+    "vrKeyboardVerified": false
+  },
+  "retainedCaseEvidence": {
+    "path": "framey-playtime-native-arm64-2026-11-20.json.gz",
+    "sha256": "c0a20625aed8862437e93eee2a26c1746f8ecc2d883d483c0a395084027c2af2",
+    "uncompressedSha256": "3af6331e3d2940c0242838cbd209d7c7ed3ba5f3b7be98007c37998aee60133e",
+    "scope": "Exact PlayTime case objects plus native loader and runtime source fingerprints; other plugin cases omitted."
+  }
+}

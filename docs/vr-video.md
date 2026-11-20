@@ -30,18 +30,60 @@ launches DeoVR, links a Proton prefix, or accepts directories.
 
 | Media | Supported preview |
 |---|---|
-| Movies | H.264 / H.265, mono or left-first SBS / top-first OU; audio through the Frame's PulseAudio-compatible server |
+| Movies | H.264 / H.265, mono or SBS / OU with either eye first; audio through the Frame's PulseAudio-compatible server |
 | Stereo photos | PNG / JPEG containing both eyes, SBS or OU |
 | Gaussian splats | Common 32-byte `.splat` records, 1–20,000 Gaussians; a stationary stereo preview |
+
+For files with several video tracks, the player uses the first track marked
+as default, excluding attached cover artwork. If none is marked, it uses the
+first video track without attached artwork. Probing and decoding use that same
+track, including its layout, dimensions, pixel shape and rotation metadata.
+There is no track selector; export the intended track if the file's default is
+wrong or uses an unsupported codec. Standalone PNG/JPEG photos remain supported.
+Track selection has local generated-file proof; real-Frame playback of these
+multi-track files remains unverified.
+
+For audio, the player also uses the first track marked as default, falling
+back to the first audio track if none is marked. It sends only that track to
+the Frame's audio output. There is no language or audio-track selector; remux
+the file with the intended default to choose a different track. Generated-file
+checks cover selection and decoded audio bytes locally; real-Frame sound and
+lip sync remain unverified.
+
+For right-eye-first video or photos, choose **right eye on left** (SBS) or
+**right eye on top** (OU) in Layout. The CLI/API values are `sbs-rl`, `ou-rl`,
+`full-sbs-rl` and `full-ou-rl`. The player swaps eye images without mirroring
+their pixels and keeps the selected half/full packing's aspect correction.
+These additions have offline pixel and player tests; real-Frame playback and
+worn eye separation for right-eye-first sources remain unverified.
+
+The player uses ffprobe's pixel aspect ratio for anamorphic video and photos,
+in addition to the selected stereo packing. It preserves each eye's display
+shape when scaling to the transfer limit, including even-dimension rounding.
+Missing or unspecified pixel shape uses square pixels; invalid ratios fail
+before creating an overlay. This correction has local decoder and geometry
+proof; its appearance on a real Frame remains unverified.
 
 Auto layout reads delimited filename tags: `_SBS`, `_HSBS`, `_LR`, `_OU`,
 `_TB`, `_HOU`, `_HTB`, `_FSBS`, `_FOU`, `_FTB`. SBS/OU without `F` means
 half-resolution packing. Full packing preserves each eye's original aspect.
-It also accepts FFmpeg's `stereo_mode` metadata (`left_right`, `top_bottom`,
-`mono`); left/right and top/bottom metadata are treated as full packing.
+It also accepts FFmpeg's `stereo_mode` metadata (`left_right`, `right_left`,
+`top_bottom`, `bottom_top`, `mono`); stereo metadata is treated as full packing.
+`right_left` and `bottom_top` select right-eye-first packing. Filename tokens
+`RL` or `BT`, including combinations such as `_SBS_RL`, require an explicit
+layout instead of silently treating them as left-eye-first.
 Choose an explicit layout if that assumption doesn't match the file.
 Unknown or conflicting tags ask for a choice, rather than silently flattening
 stereo. The explicit selector always wins. Layout is not guessed from resolution.
+
+For mono video, quarter-turn rotation metadata is included when sizing the
+screen. A 90°/270° turn swaps the dimensions and the source pixel aspect;
+FFmpeg still performs the pixel rotation. Stereo media with nonzero rotation
+metadata is refused before creating overlays: rotating a packed stereo image
+can change its packing and eye order. Export it with rotation applied first,
+then select the resulting layout. Non-quarter-turn or invalid rotation metadata
+also needs an exported copy. These changes have local decoder and player tests;
+their appearance in a real Frame remains unverified.
 
 ## What was verified
 
@@ -121,8 +163,8 @@ The ffmpeg path above completed instead.
 - **Not verified:** worn-headset comfort, sound quality/lip sync, long movies,
   4K/8K decode, HDR, controller interaction or behaviour on other OS builds.
   Output is bounded to 1920×1080 packed pixels before OU rearrangement.
-- **Not implemented:** pause, seeking, subtitles, playlists, right-eye-first
-  layouts, non-square pixel correction, VR180/360 projection and fisheye.
+- **Not implemented:** pause, seeking, subtitles, playlists,
+  VR180/360 projection and fisheye.
   This preview is a flat stereo screen, not a dome player.
 - **Native spatial-photo blocker:** HEIC/HEIF/AVIF/MPO stereo-container
   extraction isn't implemented in our viewer. We reject these rather than

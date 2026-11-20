@@ -320,6 +320,11 @@ How (**verified 2026-09-29**, SteamOS 0.4.1, build 20260925.6191901):
   desktop is closed. Check that SteamVR is running, retry or use Headset view;
   if it persists, report the exact message and SteamOS version. The confirmed
   empty-list advice is retained when the property is present but empty.
+  If panel reads overlap, only the newest read can update the list or its
+  error. Returning to Desktop view while an earlier read is pending retains
+  one polling chain, at the existing three-second visible or ten-second hidden
+  interval. Deferred-response tests cover this ordering; they do not verify
+  real capture, focus or input.
   [2026-10-24 investigation and verification limits](evidence/panel-discovery-2026-10-24.md).
   A later [packaged v0.4.17 test on the real Frame](evidence/desktop-capture-packaged-2026-10-24.md)
   captured a mapped, focused nested KDE compositor on SteamOS 0.5.6. SteamVR

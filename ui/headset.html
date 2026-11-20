@@ -253,8 +253,10 @@ async function deckyChange(action,plugin){if(deckyBusy)return;
   if(!deckyState||(action!=='remove'&&!deckyState.running))return;
   if(!confirm(`${action} ${plugin.name}? Store plugins run code as your Frame user.`))return;
   deckyBusy=true;showDeckyStore();
-  const panelClosed=(action==='update'||action==='remove')&&activeFrameyId===plugin.id;
-  const panelNote=panelClosed?(action==='remove'?' Plugin panel closed after removal.':
+  // Every store mutation can restart the shared Decky service. Retire even a
+  // different plugin's settings view and subscriptions before submitting it.
+  const panelClosed=activeFrameyId!==null;
+  const panelNote=panelClosed?(action==='remove'&&activeFrameyId===plugin.id?' Plugin panel closed after removal.':
     ' Old plugin panel closed; reopen it after refreshing installed plugins.') : '';
   if(panelClosed)closeFrameyPanel();
   deckyJobView(`${action} ${plugin.name}`,
@@ -386,6 +388,7 @@ function frameyCacheSave(id,entries){
   try{localStorage.setItem(frameyCacheKey(id),encoded);frameyCacheFallback.delete(id);}
   catch(_){frameyCacheFallback.set(id,encoded);} // Same bounds as persisted data.
   showFrameyCacheStatus();
+  return !frameyCacheFallback.has(id);
 }
 byId('frameyCacheRetry').onclick=()=>{
   const saved=frameyCacheFallback.get(activeFrameyId);
@@ -410,6 +413,16 @@ window.addEventListener('message',async event=>{
   if(req.type==='framey:cache:save'){
     if(req.session===frameySession)frameyCacheSave(activeFrameyId,req.entries);
     return;
+  }
+  if(req.type==='framey:cache:commit'){
+    if(req.session!==frameySession||!Number.isSafeInteger(req.id)||req.id<1)return;
+    const reply={type:'framey:reply',id:req.id};
+    const saved=req.method==='save'&&Array.isArray(req.args)&&req.args.length===1
+      ? frameyCacheSave(activeFrameyId,req.args[0]) : undefined;
+    if(saved!==true)reply.error=saved===false
+      ? 'Plugin settings are only in memory. Use Retry saving before closing or reloading Frame Control.'
+      : 'Invalid plugin settings snapshot';
+    event.source.postMessage(reply,'*');return;
   }
   if(req.type==='framey:ready'&&req.session===frameySession){byId('frameyPanelStatus').textContent='Plugin panel ready';
     api('/api/framey/check',{kind:'panel',pluginId:activeFrameyId}).catch(()=>{});return;}

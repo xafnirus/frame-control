@@ -13,10 +13,12 @@ import os
 from pathlib import Path
 import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 import urllib.request
 
 
@@ -41,6 +43,11 @@ parent.postMessage({type:'framey:cache:init', session:'fixture'}, '*');
 
 @unittest.skipUnless(BROWSER, 'set FRAMEY_STARTUP_BROWSER for isolated browser proof')
 class BrowserStartup(unittest.TestCase):
+    def setUp(self):
+        modules = patch.dict(sys.modules, {'frame_steam': self.cdp()})
+        modules.start()
+        self.addCleanup(modules.stop)
+
     def document_builder(self):
         source = ROOT / 'tests/decky-runtime/syncthing_browser.py'
         tree = ast.parse(source.read_text())
@@ -226,7 +233,7 @@ nativeTimeout(()=>{
         server.daemon_threads = True
         threading.Thread(target=server.serve_forever, daemon=True).start()
         browser = page = None
-        pending_pages, readiness = [], {}
+        readiness = {'startupClock': {'origin': 'bridge-monotonic'}}
         with tempfile.TemporaryDirectory(prefix='framey-startup-test-') as scratch:
             try:
                 profile = Path(scratch) / 'profile'
@@ -239,18 +246,12 @@ nativeTimeout(()=>{
                         '--user-data-dir=' + str(profile),
                         'http://127.0.0.1:' + str(server.server_port) + '/'],
                         stdout=log, stderr=log, start_new_session=True)
+                    page = receiver.wait_for_panel(browser, profile, readiness, started)
+                    cdp.CDP = receiver.frame_steam.CDP
                     deadline = time.monotonic() + 20
                     ready = False
                     while time.monotonic() < deadline:
                         self.assertIsNone(browser.poll(), 'isolated browser exited')
-                        if page is None:
-                            try:
-                                port = (profile / 'DevToolsActivePort').read_text().splitlines()[0]
-                                cdp.CDP = 'http://127.0.0.1:' + port + '/json'
-                                receiver.frame_steam.CDP = cdp.CDP
-                                page = receiver.ready_page(readiness, started, pending_pages)
-                            except (OSError, IndexError, receiver.frame_steam.Fail):
-                                pass
                         if page is not None:
                             try:
                                 ready = page.eval("typeof ready !== 'undefined' && ready")
@@ -262,7 +263,11 @@ nativeTimeout(()=>{
                                 break
                         time.sleep(.1)
                     self.assertTrue(ready, 'child seed request was lost during parent delivery')
-                    self.assertEqual(pending_pages, [])
+                    clock = readiness['startupClock']
+                    self.assertTrue(clock['browserConnected'])
+                    self.assertTrue(clock['readinessPassed'])
+                    self.assertAlmostEqual(clock['readinessDeadlineAfterSeconds'] -
+                                           clock['readinessStartedAfterSeconds'], 60, places=2)
                     if delay:
                         self.assertTrue(any(a['connectionReused'] for a in readiness['readinessAttempts']))
                     self.assertEqual(page.eval('window.startupErrors'), [])
@@ -319,8 +324,6 @@ nativeTimeout(()=>{
                     print('Framey parent progress proof: '+json.dumps(progress, sort_keys=True))
                     print('Framey readiness connection proof: '+json.dumps(readiness, sort_keys=True))
             finally:
-                while pending_pages:
-                    pending_pages.pop().sock.close()
                 if page is not None:
                     page.sock.close()
                 if browser is not None:

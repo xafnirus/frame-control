@@ -1,4 +1,4 @@
-"""Complete plugin names remain identities across store, inventory and RPC."""
+"""Plugin names and receipt digests stay exact across inventory and RPC."""
 import sandbox  # noqa: F401
 import contextlib
 import hashlib
@@ -38,6 +38,56 @@ class PluginNameIdentity(unittest.TestCase):
         with patch.object(Path, 'home', return_value=self.home), contextlib.redirect_stdout(output):
             exec(frame_decky.PLUGINS_PROBE, {})
         return json.loads(output.getvalue())
+
+    def test_inventory_does_not_truncate_or_coerce_receipt_digests(self):
+        receipt = self.folder/'.frame-control-store.json'
+        for digest in (self.digest, self.digest+'b', self.digest+' trailing',
+                       self.digest+'雪', int('1'*64), None, True, [], {}):
+            with self.subTest(digest=digest):
+                raw = json.dumps({'storeId':42,'sha256':digest,'version':'1.0'}).encode()
+                receipt.write_bytes(raw)
+                found = self.inventory()['plugins'][0]
+                self.assertEqual(found['sha256'], digest if isinstance(digest,str) else '')
+                self.assertEqual(found['storeId'],42)
+                self.assertEqual(found['name'],self.name)
+                self.assertEqual(receipt.read_bytes(),raw)
+
+    def test_malformed_digest_cannot_authorize_backend_calls_and_recovers_after_repair(self):
+        receipt = self.folder/'.frame-control-store.json'
+        (self.folder/'plugin.json').write_text(json.dumps({'name':self.name,'flags':[],'api_version':2}))
+        dist = self.folder/'dist'
+        dist.mkdir()
+        bundle = b'export default () => ({content: null});'
+        (dist/'index.js').write_bytes(bundle)
+        forwarded = []
+
+        def ssh(command, stdin=None, **kwargs):
+            self.assertEqual(command,'python3 -')
+            if stdin == frame_decky.PLUGINS_PROBE:
+                return json.dumps(self.inventory())
+            forwarded.append(stdin)
+            return json.dumps({'result':True})
+
+        with patch.object(framey_panel,'PLUGINS',self.folder.parent):
+            for digest, reviewed in ((self.digest+'b',self.digest), (int('1'*64),'1'*64)):
+                with self.subTest(digest=digest):
+                    raw = json.dumps({'storeId':42,'sha256':digest,'version':'1.0'}).encode()
+                    receipt.write_bytes(raw)
+                    with self.assertRaises(FileNotFoundError):
+                        framey_panel.local_bundle(42)
+                    for legacy,args in ((False,['enabled',True]), (True,[{'key':'enabled','value':True}])):
+                        with self.assertRaisesRegex(framey_panel.PanelError,'plugin changed'):
+                            framey_panel.call_method(ssh,42,'set_setting',args,legacy,reviewed)
+                    with self.assertRaisesRegex(framey_panel.PanelError,'plugin changed'):
+                        framey_panel.poll_events(ssh,42,'receipt-test',['settings:changed'],receipt=reviewed)
+                    self.assertEqual(forwarded,[],'invalid receipt must stop before a CEF request')
+                    self.assertEqual(receipt.read_bytes(),raw)
+            # A fresh read recognizes a repaired receipt without reinstalling.
+            receipt.write_text(json.dumps({'storeId':42,'sha256':self.digest,'version':'1.0'}))
+            self.assertEqual(framey_panel.local_bundle(42),bundle)
+            self.assertEqual(framey_panel.call_method(ssh,42,'set_setting',['enabled',True],
+                                                     receipt=self.digest),{'result':True})
+            self.assertEqual(len(forwarded),1)
 
     def records(self, names):
         return [{'id':42+index,'name':name,'versions':[{'name':'1.0','hash':self.digest}],'tags':[]}

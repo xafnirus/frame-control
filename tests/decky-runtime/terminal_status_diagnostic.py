@@ -1,6 +1,6 @@
-"""Failure-only read-only status profiling in an owned, networkless VM.
+"""Passive wait timing and failure-only profiling in an owned, networkless VM.
 
-This runs after the real production replay has already failed. Its modified
+Status profiling runs after the real production replay has already failed. Its modified
 Python invocation never substitutes for that replay or changes its deadline.
 Raw status replies, stderr, paths and stack source lines are not retained.
 """
@@ -16,6 +16,27 @@ import sys
 import tempfile
 import threading
 import time
+
+
+def observe_wait(wait, read, description, *, timeout, started, records):
+    """Retain fixture wait boundaries before cleanup drains late HTTP replies.
+
+    The original waiter owns reads, retry behavior and its deadline. These
+    timestamps share the HTTP trace's monotonic origin; no extra RPC is issued.
+    """
+    record = dict(description=description, timeoutSeconds=timeout,
+                  startedAfterSeconds=round(time.monotonic()-started, 3), outcome='pending')
+    records.append(record)
+    try:
+        result = wait(read, description, timeout=timeout)
+    except BaseException as error:
+        record.update(outcome='failure', errorType=type(error).__name__)
+        raise
+    else:
+        record['outcome'] = 'success'
+        return result
+    finally:
+        record['finishedAfterSeconds'] = round(time.monotonic()-started, 3)
 
 
 class RequestActivity:

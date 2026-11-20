@@ -24,7 +24,7 @@ from syncthing_http import CEF as RPC_CEF, observe_ssh, panel_command_kind, safe
 from syncthing_http_parent import command, install_child_harness, sandboxed_renderers
 from terminal_browser import COMMAND, PROBE, screenshot
 from syncthing_service import stop_decky_service
-from terminal_status_diagnostic import RequestActivity
+from terminal_status_diagnostic import RequestActivity, observe_wait
 
 
 CEF_TRACE = ('({records:fixtureRpcTrace,overflow:fixtureTraceOverflow,'
@@ -134,6 +134,7 @@ def exercise(name, home):
                   browserSandboxDisabled=False, uiSourceFingerprints=sources)
     browser = cef = page = httpd = worker = None
     stages, shots, requests, assets = [], {}, [], []
+    report['frontendWaits'] = []
     status_requests, ssh_records, ssh_lock = [], [], threading.Lock()
     status_profiles = dict(records=[], overflow=False)
     request_activity = RequestActivity()
@@ -324,16 +325,18 @@ await new Promise(requestAnimationFrame);await new Promise(requestAnimationFrame
                     failure = page.eval('window.terminalFailure')
                     assert failure is None, failure
                     return page.eval('window.terminalStage')
-                stage = until_ready(advanced, 'production Terminal '+label, timeout=90)
+                stage = observe_wait(until_ready, advanced, 'production Terminal '+label,
+                                     timeout=90, started=started, records=report['frontendWaits'])
                 assert stage['stage'] == label and not stage['errors'], stage
                 stages.append(stage)
                 if action == 'create':
                     # A textarea appears before asynchronous configuration and
                     # connectIO finish. Observe the real production replies;
                     # never synthesize loaded state or skip frontend setup.
-                    until_ready(lambda: any(entry['request'].get('method') == 'send_terminal_buffer'
+                    observe_wait(until_ready, lambda: any(entry['request'].get('method') == 'send_terminal_buffer'
                                 and entry['httpStatus'] == 200 and entry['response'].get('result') is True
-                                for entry in requests), 'actual frontend Terminal subscription/buffer', timeout=90)
+                                for entry in requests), 'actual frontend Terminal subscription/buffer',
+                                 timeout=90, started=started, records=report['frontendWaits'])
                     shell_pid = started_terminal_pid(requests)
                     directory = Path('/proc')/str(shell_pid)
                     assert directory.stat().st_uid == os.getuid()

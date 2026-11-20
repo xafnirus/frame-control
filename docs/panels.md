@@ -138,6 +138,16 @@ forward. **Open in headset** opens the same switcher as its own panel; choose
 it again from Steam's dashboard after switching away. Refresh updates the list.
 This is a list, not thumbnail Exposé.
 
+Switching headsets immediately clears the companion’s old panel titles and
+**Show** buttons. Use **Refresh** to read the selected headset’s panels; late
+replies from the previous headset cannot restore its list. Offline regression
+tests exercise the shipped connection, list and focus handlers with synthetic
+responses. They do not verify physical panel focus or worn visibility.
+
+If Refresh requests overlap, only the newest request can update the headset
+switcher's list or refresh error. Offline tests execute the shipped page script
+with reordered responses; they do not verify worn-headset selection or visibility.
+
 ![Frame Control's switcher rendered on the Frame](img/panel-switcher.png)
 
 This is our own Python/HTML implementation (`ui/frame_panels.py`), using the
@@ -163,6 +173,11 @@ listing panels, requesting focus and closing this switcher. Like Mac viewer
 launch tickets, it is initially readable by another process running as the
 same Frame user. Panel titles are rendered as text, never HTML. The companion
 retains its existing request guards. No Mac capture credentials cross this API.
+If the browser denies tab storage, the launch key stays in memory for the
+current page and the fragment is still removed. A reload cannot recover that
+key without tab storage: close the switcher window and reopen it from Frame
+Control. Missing keys continue to fail authentication. Offline checks cover
+this fallback; storage denial has not been observed on the real Frame.
 
 **Verified:** the real headset page rendered its panel list (image above), its
 HTTP focus request changed `GAMESCOPE_FOCUSED_APP` to `2000999030`, a request

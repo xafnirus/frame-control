@@ -39,6 +39,28 @@ Ctrl+Alt+T needs a desktop terminal shortcut, for example. Browser/OS intercepti
 focus and app bindings still apply. The separate Capture viewer retains its
 existing Command-to-Ctrl mapping; this page describes **Keyboard and trackpad**.
 
+## Windows: video works but input fails
+
+If **Keyboard and trackpad** reports `[WinError 206] The filename or extension
+is too long`, update to **v0.4.62 or later**, quit Frame Control, and reopen
+the updated app. That release shortened the SSH commands used to start the
+keyboard and touch helpers. The older touch-helper command exceeded Windows'
+process command-line limit. This is the command-size repair relevant to
+[issue #559](https://github.com/saphid/frame-control/issues/559); successful
+video streaming alone does not establish that the separate input helper started.
+
+After updating, turn **Keyboard and trackpad** on and check its status before
+capturing input. If it still reports an error, include the exact error and the
+installed Frame Control version in a bug report. If it becomes ready, focus
+the headset app you want to control and try the explicit key or click buttons
+before using capture. Focus, the headset's input path, and app bindings still
+need to work independently of helper startup.
+
+The command-size and helper-payload tests pass offline; a physical Windows
+PC controlling the real Frame has not been verified for this repair. See the
+[Windows command verification](evidence/windows-input-command-size-2026-11-20.md)
+for the measurements and test limits.
+
 Automated coverage executes the production browser handlers, server validation,
 translation and gamescope input dispatch through the libei key-call boundary.
 HTTP/SSH transport and the final device are test doubles. These tests establish event sequences and

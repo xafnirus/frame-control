@@ -4,17 +4,19 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Frame Control: manage your Steam Frame from your computer</title>
-<meta name="description" content="Free, open-source app for the Valve Steam Frame. See what the headset sees, install Steam games and Android apps, move files and text across, and check battery and status. Desktop downloads for macOS, Windows and Linux; iPhone build instructions.">
+<meta name="description" content="Free, open-source app for the Valve Steam Frame. See what the headset sees, install Steam games and Android apps, move files and text across, and check battery and status. Desktop downloads for macOS, Windows and Linux; public iPhone and iPad beta.">
 <meta name="theme-color" content="#0e141b">
 <link rel="icon" href="/favicon.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta property="og:type" content="website">
 <meta property="og:title" content="Frame Control">
 <meta property="og:description" content="Manage your Valve Steam Frame from your computer. Free and open source.">
-<meta property="og:image" content="/img/og.jpg">
+<meta property="og:image" content="https://framecontrol.fun/img/og.jpg">
+<link rel="canonical" href="https://framecontrol.fun/">
+<meta property="og:url" content="https://framecontrol.fun/">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="stylesheet" href="/css/site.css">
-<script src="/js/site.js" defer></script>
+<link rel="stylesheet" href="/css/site.css?v=20261119-reconcile1">
+<script src="/js/site.js?v=20261119-reconcile1" defer></script>
 </head>
 <body>
 
@@ -33,7 +35,7 @@
         <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
         GitHub
       </a>
-      <a class="btn small coffee" data-kofi href="#" target="_blank" rel="noopener">Support</a>
+      <a class="btn small coffee" data-kofi hidden href="#" target="_blank" rel="noopener">Support</a>
     </div>
   </div>
 </header>
@@ -148,7 +150,7 @@
       <div class="copy">
         <span class="kicker">Android</span>
         <h2>Android apps, one click each</h2>
-        <p>A catalogue of about 4,500 F-Droid apps, each tested and rated on a real Frame. Every app gets its own Lepton instance and its own tile in your Steam library.</p>
+        <p>A catalogue of about 4,500 F-Droid apps with compatibility checks and tools to record your own results. Every app gets its own Lepton instance and its own tile in your Steam library.</p>
         <ul>
           <li>Filter by what works on the Frame</li>
           <li>Install any APK you have, no Android SDK needed</li>
@@ -168,12 +170,12 @@
   </div>
 </section>
 
-<section>
+<section id="iphone">
   <div class="wrap">
     <div class="head">
       <span class="kicker">iPhone and iPad</span>
       <h2>Also in your pocket</h2>
-      <p>The same features on iPhone and iPad, served from the Frame itself, so there's nothing to run on a computer. There is no App Store, TestFlight or iOS download in the current release. Building it requires a Mac, Xcode and your own signing team. <a href="https://github.com/saphid/frame-control/blob/main/docs/iphone.md">iPhone build and pairing instructions</a>.</p>
+      <p>A public beta is available on TestFlight: <a href="https://testflight.apple.com/join/9xjW91g6">join the iPhone and iPad beta</a>. It runs its server on the Frame, so no computer is needed after setup. You need a reachable Steam Frame with Developer Mode enabled and a Developer Mode user password set. Building from source requires a Mac, Xcode and your own signing team. <a href="https://github.com/saphid/frame-control/blob/main/docs/iphone.md">iPhone build and pairing instructions</a>.</p>
     </div>
     <div class="phones">
       <img src="/img/phone-home.jpg" width="600" height="1304" loading="lazy" alt="Frame Control on iPhone: headset view and device status.">
@@ -203,7 +205,7 @@
         <p>Setup tries Valve's pairing first: open Developer → <b>Pair new host</b> in the headset and approve only your request. If it fails or times out, enter the Developer Mode password in the computer's terminal (typing may be invisible), then press Enter.</p>
       </div>
     </div>
-    <p class="setup-note">The devkit service and pairing-mode step were checked on a Frame; approval and key installation through that flow remain unverified. <a href="https://github.com/saphid/frame-control/blob/main/docs/ssh.md#password-free-pairing-steamos-devkit-service">Pairing details</a>. After setup succeeds, return to the app; future connections use SSH keys. Still offline? Check Developer Mode, the IP and network isolation, then rerun setup. For use away from home, see <a href="https://github.com/saphid/frame-control/blob/main/docs/tailscale.md">Tailscale</a>.</p>
+    <p class="setup-note">The devkit service and pairing-mode step were checked on a Frame; approval and key installation through that flow remain unverified. <a href="https://github.com/saphid/frame-control/blob/main/docs/ssh.md#password-free-pairing-steamos-devkit-service">Pairing details</a>. After setup succeeds, return to the app; future connections use SSH keys. Still offline? Check Developer Mode, the IP and network isolation, then rerun setup. Tailscale is an advanced option; off-LAN access remains unverified. Read the <a href="https://github.com/saphid/frame-control/blob/main/docs/tailscale.md#exposure-every-port-is-on-the-tailnet">Tailscale exposure notes</a> before enabling it.</p>
   </div>
 </section>
 
@@ -217,9 +219,10 @@
     <div class="downloads">
       <div class="dl" id="download-mac" data-os="mac">
         <div class="os"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M16.37 12.6c-.02-2.2 1.8-3.26 1.88-3.31-1.02-1.5-2.62-1.7-3.19-1.72-1.36-.14-2.65.8-3.34.8-.69 0-1.75-.78-2.88-.76a4.27 4.27 0 0 0-3.6 2.19c-1.53 2.66-.39 6.6 1.1 8.76.73 1.06 1.6 2.24 2.74 2.2 1.1-.04 1.51-.71 2.84-.71 1.32 0 1.7.71 2.86.69 1.18-.02 1.93-1.08 2.65-2.14.83-1.23 1.18-2.41 1.2-2.47-.03-.01-2.3-.88-2.32-3.5zM14.2 6.13c.6-.73 1.01-1.75.9-2.76-.87.04-1.92.58-2.54 1.3-.56.64-1.05 1.67-.92 2.66.97.08 1.96-.49 2.56-1.2z"/></svg><h3>macOS</h3><span class="tag" hidden>OS detected</span></div>
-        <span class="need">Apple Silicon (M-series) only · no Intel Mac build</span>
+        <span class="need">Apple Silicon (M-series) or Intel</span>
         <div class="links">
-          <a class="btn primary" href="https://github.com/saphid/frame-control/releases/latest/download/Frame-Control-mac-arm64.dmg">Download .dmg</a>
+          <a class="btn primary" href="https://github.com/saphid/frame-control/releases/latest/download/Frame-Control-mac-arm64.dmg">Apple Silicon .dmg</a>
+          <a class="btn ghost" href="https://github.com/saphid/frame-control/releases/latest/download/Frame-Control-mac-x64.dmg">Intel .dmg</a>
         </div>
         <p>Check Apple menu → About This Mac for your chip. Open the DMG, drag Frame Control to Applications, then open it there. Allow local network access and Terminal control when asked.</p>
         <p>The app isn't notarized. <a href="#mac-opening">macOS opening instructions</a>.</p>
@@ -265,16 +268,16 @@
         <p lang="ja">日本語: v0.4.26 以降は公式リリースの SHA256SUMS とファイルの SHA-256 値を照合してください。Windows は未署名、macOS は開発者 ID による署名・公証がありません。</p></div>
       </details>
       <details id="mac-opening">
-        <summary>macOS says the app is damaged or can't be checked</summary>
-        <div><p>The app isn't notarized, because there's no paid Apple developer account behind it. Only for a download you trust from the releases linked above: drag it to Applications, then clear the download quarantine once in Terminal:</p>
+        <summary id="mac-first-launch">macOS says the app is damaged or can't be checked</summary>
+        <div><p>The macOS download isn't notarized. Only for a download you trust from the releases linked above: drag it to Applications, then clear the download quarantine once in Terminal:</p>
         <p><code>xattr -dr com.apple.quarantine "/Applications/Frame Control.app"</code></p></div>
       </details>
       <details id="windows-opening">
-        <summary>Windows SmartScreen says it protected my PC</summary>
+        <summary id="windows-first-launch">Windows SmartScreen says it protected my PC</summary>
         <div><p>The installer isn't code-signed. Choose <b>More info → Run anyway</b>, or use the portable .zip: unzip it anywhere and run <code>Frame Control.exe</code>.</p></div>
       </details>
       <details id="linux-opening">
-        <summary>How do I open the Linux AppImage?</summary>
+        <summary id="linux-first-launch">How do I open the Linux AppImage?</summary>
         <div><p>In a terminal in your download folder, use the exact filename for your architecture. For x64:</p>
         <pre><code>chmod +x Frame-Control-linux-x86_64.AppImage
 ./Frame-Control-linux-x86_64.AppImage</code></pre>
@@ -286,7 +289,7 @@
       </details>
       <details>
         <summary>Is it safe to leave Developer Mode on?</summary>
-        <div><p>With Developer Mode on, SSH, ADB and remote desktop are reachable on your local network. Use trusted networks, turn Developer Mode off when you don't need it, and never port-forward those ports from your router. For remote access, use Tailscale. <a href="https://github.com/saphid/frame-control#readme">Security notes</a></p></div>
+        <div><p>With Developer Mode on, SSH, ADB and remote desktop are reachable on your local network. Use trusted networks, turn Developer Mode off when you don't need it, and never port-forward those ports from your router. Tailscale is an advanced option; off-LAN access remains unverified. Read the <a href="https://github.com/saphid/frame-control/blob/main/docs/tailscale.md#exposure-every-port-is-on-the-tailnet">Tailscale exposure notes</a> before enabling it.</p></div>
       </details>
       <details>
         <summary>Is this made by Valve?</summary>
@@ -306,12 +309,12 @@
     </div>
     <div class="card">
       <div class="ico" style="background:rgba(255,94,91,.14);color:#ff8a87"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 8h1a4 4 0 0 1 0 8h-1M3 8h14v9a4 4 0 0 1-4 4H7a4 4 0 0 1-4-4zM6 2v3M10 2v3M14 2v3"/></svg></div>
-      <h3 data-needs-kofi>Buy me a coffee</h3>
-      <h3 data-no-kofi hidden>Like it? Pass it on</h3>
-      <p data-needs-kofi>Frame Control is free and always will be. If it saves you time, a coffee keeps it going.</p>
-      <p data-no-kofi hidden>Frame Control is free and always will be. The best way to help is to star the repo and tell a friend.</p>
-      <a class="btn coffee" data-kofi href="#" target="_blank" rel="noopener">Support on Ko-fi</a>
-      <a class="btn ghost" data-no-kofi hidden href="https://github.com/saphid/frame-control">Star on GitHub</a>
+      <h3 data-needs-kofi hidden>Buy me a coffee</h3>
+      <h3 data-no-kofi>Like it? Pass it on</h3>
+      <p data-needs-kofi hidden>Frame Control is free and always will be. If it saves you time, a coffee keeps it going.</p>
+      <p data-no-kofi>Frame Control is free and always will be. The best way to help is to star the repo and tell a friend.</p>
+      <a class="btn coffee" data-kofi hidden href="#" target="_blank" rel="noopener">Support on Ko-fi</a>
+      <a class="btn ghost" data-no-kofi href="https://github.com/saphid/frame-control">Star on GitHub</a>
     </div>
   </div>
 </section>

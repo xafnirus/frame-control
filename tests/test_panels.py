@@ -3,6 +3,8 @@ import sandbox  # noqa: F401  (first: keeps tests off real data and services)
 import http.client
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import threading
 import unittest
@@ -22,6 +24,12 @@ OVERLAYS = """---- OVERLAYS ----
 
 
 class Panels(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('node'), 'Node executes the shipped panel page')
+    def test_page_keeps_the_latest_refresh_result(self):
+        result = subprocess.run(['node', str(Path(__file__).with_name('panels_ui.cjs')), '-'],
+                                input=panels.PAGE, capture_output=True, text=True, timeout=10)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
     def test_enumerates_only_main_panels_including_hidden(self):
         rows = panels.parse_overlays(OVERLAYS)
         self.assertEqual(len(rows), 2)

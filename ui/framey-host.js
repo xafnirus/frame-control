@@ -91,14 +91,7 @@
     get length() {return cache.size;},
     key(index) {return [...cache.keys()][index] ?? null;},
     getItem(key) {return cache.get(String(key)) ?? null;},
-    setItem(key, value) {
-      const name = String(key), data = String(value);
-      const next = new Map(cache); next.set(name, data);
-      if (next.size > 64 || name.length > 256 || data.length > 65536 ||
-          JSON.stringify(Object.fromEntries(next)).length > cacheLimit)
-        throw new DOMException('Framey plugin cache is full', 'QuotaExceededError');
-      cache.set(name, data); persistCache();
-    },
+    setItem(key, value) {setCacheItem(key, value); persistCache();},
     removeItem(key) {cache.delete(String(key)); persistCache();},
     clear() {cache.clear(); persistCache();},
   };
@@ -126,6 +119,14 @@
       target.removeItem(key); return true;
     },
   });
+  function setCacheItem(key, value) {
+    const name = String(key), data = String(value);
+    const next = new Map(cache); next.set(name, data);
+    if (next.size > 64 || name.length > 256 || data.length > 65536 ||
+        JSON.stringify(Object.fromEntries(next)).length > cacheLimit)
+      throw new DOMException('Framey plugin cache is full', 'QuotaExceededError');
+    cache.set(name, data);
+  }
   function persistCache() {
     parent.postMessage({type:'framey:cache:save', session:cacheSession,
       entries:Object.fromEntries(cache)}, '*');
@@ -140,7 +141,9 @@
     if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(method)) return Promise.reject(Error('Invalid backend method'));
     const id = ++nextId;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => { pending.delete(id); reject(Error('Decky backend timed out')); }, timeout);
+      const timer = setTimeout(() => { pending.delete(id); reject(Error(type==='framey:cache:commit'
+        ? 'Could not confirm saved plugin settings; the parent did not reply. Reopen the panel to read the saved value.'
+        : 'Decky backend timed out')); }, timeout);
       pending.set(id, {resolve, reject, timer});
       parent.postMessage({type, id, method, args, legacy, session:cacheSession}, '*');
     });
@@ -1274,13 +1277,25 @@
     ...['Notifications','RemotePlayTogetherControls','VoiceChat','Friends',
       'Settings','Perf','Help','Music'].map((name,value)=>[name,value]), ['Decky',999],
   ].flatMap(([name,value])=>[[name,value],[value,name]])));
+  // A finite set of local SVGs for published panel controls, not Steam's icon
+  // module. In particular, SteamGridDB dereferences these before rendering its
+  // search field or an image-error placeholder.
+  const localIcon = path => ({children, ...props}) => R.createElement('svg', {
+    viewBox:'0 0 24 24', width:'1em', height:'1em', fill:'none', stroke:'currentColor',
+    strokeWidth:2, strokeLinecap:'round', strokeLinejoin:'round', 'aria-hidden':true,
+    ...props,
+  }, children, R.createElement('path', {d:path}));
+  const IconsModule = Object.freeze({
+    Search:localIcon('M21 21l-6-6M10 3a7 7 0 1 0 0 14 7 7 0 0 0 0-14'),
+    WiredNetworkWarning:localIcon('M12 3 2 21h20L12 3zM12 9v5M12 17v.01'),
+  });
   const DFL = window.DFL = {
     definePlugin: init => init,
     PanelSection, PanelSectionRow: passthrough('div'), Field, ToggleField, DropdownItem, ReorderableList,
     Dropdown: DropdownItem, ButtonItem, DialogCheckbox, TextField, SliderField,
     Focusable, ScrollPanel, ScrollPanelGroup,
     DialogButton, DialogButtonPrimary: DialogButton, ConfirmModal,
-    DialogButtonSecondary: DialogButton, Button: DialogButton, GamepadButton, QuickAccessTab,
+    DialogButtonSecondary: DialogButton, Button: DialogButton, GamepadButton, QuickAccessTab, IconsModule,
     ColorPickerModal,
     Toggle, Spinner, SteamSpinner:Spinner, Tabs, SidebarNavigation,
     SuspensefulImage:({alt='', ...props})=>R.createElement('img', {...props, alt}),
@@ -1389,7 +1404,10 @@
       SetObject:async(key,value)=>{
         const encoded=JSON.stringify(value);
         if(encoded===undefined)throw Error('SteamClient.Storage requires a JSON value');
-        storage.setItem('steam-client:'+String(key),encoded);
+        setCacheItem('steam-client:'+String(key),encoded);
+        // Unlike localStorage's synchronous API, this async API can report
+        // whether the parent actually persisted the snapshot before success.
+        await request('save',[Object.fromEntries(cache)],false,'framey:cache:commit',5000);
       },
     },
   };
@@ -1562,6 +1580,9 @@
           match.component : R.createElement(match.component)) :
           (view === 'settings' ? plugin.settings : plugin.content))));
   }
+  // Decky exposes picker failures as rejected promises. Keep the method
+  // available so plugins' .then/.catch handlers can handle this limitation.
+  const unsupportedFilePicker = () => Promise.reject(Error('Decky file picker is not supported on Frame'));
   window.__DECKY_SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED_deckyLoaderAPIInit = {
     connect: (version, name) => ({
       _version: Math.min(version, 2),
@@ -1569,6 +1590,7 @@
       callable: method => (...args) => ask(method, args),
       addEventListener:addPluginEvent, removeEventListener:removePluginEvent,
       routerHook, toaster,
+      openFilePicker: unsupportedFilePicker,
       fetchNoCors: () => Promise.reject(Error('Decky proxy fetch is unavailable in Framey')),
       executeInTab: () => Promise.reject(Error('Steam tab injection is unavailable in Framey')),
       injectCssIntoTab: () => Promise.reject(Error('Steam tab injection is unavailable in Framey')),
@@ -1579,13 +1601,16 @@
   };
   const legacyServerAPI = {
     routerHook, toaster,
+    openFilePicker: unsupportedFilePicker, openFilePickerV2: unsupportedFilePicker,
     callPluginMethod: (method, kwargs={}) => {
       if (!kwargs || typeof kwargs !== 'object' || Array.isArray(kwargs))
         return Promise.resolve({success:false, result:'Legacy plugin arguments must be an object'});
       // Decky's legacy route takes keyword arguments and returns this envelope.
       return ask(method, [kwargs], true).catch(failure=>({success:false, result:String(failure.message || failure)}));
     },
-    fetchNoCors: () => Promise.reject(Error('Decky proxy fetch is unavailable in Framey')),
+    // Decky's legacy API resolves failures as an envelope; modern fetchNoCors
+    // rejects instead. Let older plugins handle their ordinary failure branch.
+    fetchNoCors: async () => ({success:false, result:'Decky proxy fetch is not supported on Frame'}),
   };
   function projectApps(rows, limit) {
     if (!Array.isArray(rows) || rows.length > limit) throw Error('Invalid Steam app overview');

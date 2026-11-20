@@ -1,0 +1,59 @@
+<!doctype html><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'">
+<div id="framey-root"></div><div id="framey-error"></div><div id="framey-toasts"></div><div id="framey-modal"></div>
+<div id="fixture"></div><pre id="result">Pending</pre>
+<script>
+window.fixtureFailures=[];
+addEventListener('error',event=>fixtureFailures.push(event.message));
+addEventListener('unhandledrejection',event=>fixtureFailures.push(String(event.reason)));
+</script>
+<script>__REACT__</script><script>__REACT_DOM__</script><script>__HOST__</script>
+<script>
+(() => {
+  const assert=(value,message)=>{if(!value)throw Error(message);};
+  const container=document.getElementById('fixture'),root=ReactDOM.createRoot(container),SP_REACT=React;
+  const render=element=>ReactDOM.flushSync(()=>root.render(element));
+  const trans_string=(_key,fallback)=>fallback;
+  __PUBLISHED_SEARCH__
+  const Warning=({error})=>__PUBLISHED_WARNING__;
+  try {
+    const changes=[];
+    render(React.createElement(SearchTextField,{defaultValue:'Private game',onChange:event=>changes.push(event.target.value)}));
+    const search=container.querySelector('svg'),input=container.querySelector('input'),focusable=container.querySelector('[role=button]');
+    assert(container.textContent.includes('Search for a Game...')&&input,'published search field missing');
+    assert(search instanceof SVGElement&&search.querySelector('path')?.getAttribute('d'),'search icon missing');
+    assert(search.getAttribute('aria-hidden')==='true','decorative search icon should not duplicate its label');
+    ReactDOM.flushSync(()=>focusable.click());assert(document.activeElement===input,'published search focus callback failed');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(input,'Updated private game');
+    ReactDOM.flushSync(()=>input.dispatchEvent(new Event('input',{bubbles:true})));
+    assert(changes.length===1&&changes[0]==='Updated private game','search input callback failed');
+    render(React.createElement(SearchTextField,{defaultValue:'Ignored new default',disabled:true}));
+    assert(container.querySelector('svg')===search&&container.querySelector('input')===input,'redraw replaced search controls');
+    assert(input.disabled&&input.value==='Updated private game','disabled redraw lost search draft');
+    render(null);
+    render(React.createElement(Warning,{error:true}));
+    assert(container.querySelector('svg')?.style.height==='2em','published image-error icon lost its size');
+    render(React.createElement(Warning,{error:false}));assert(!container.querySelector('svg'),'cleared image error retained its icon');
+    for(const name of ['Search','WiredNetworkWarning']){
+      const Icon=DFL.IconsModule[name];
+      render(React.createElement(Icon,{className:'local-icon',style:{height:'3em',color:'rgb(10, 20, 30)'},
+        'aria-label':'Private '+name,'aria-hidden':false,role:'img',width:32},React.createElement('title',null,'Private title')));
+      const svg=container.querySelector('svg');
+      assert(svg.classList.contains('local-icon')&&svg.style.height==='3em'&&svg.style.color==='rgb(10, 20, 30)',name+' lost SVG props');
+      assert(svg.getAttribute('viewBox')==='0 0 24 24'&&svg.getAttribute('width')==='32'&&svg.getAttribute('stroke')==='currentColor',name+' lost SVG defaults');
+      assert(svg.getAttribute('aria-label')==='Private '+name&&svg.getAttribute('aria-hidden')==='false'&&svg.querySelector('title')?.textContent==='Private title',name+' lost accessible props/children');
+      render(React.createElement(Icon,{}));
+      assert(container.querySelector('svg')===svg&&!svg.hasAttribute('class')&&svg.style.height===''&&svg.style.color===''&&!svg.hasAttribute('aria-label')&&!svg.querySelector('title'),name+' retained removed props');
+      assert(svg.getAttribute('aria-hidden')==='true'&&svg.getAttribute('width')==='1em',name+' did not restore defaults');
+      render(null);
+    }
+    assert(Object.keys(DFL.IconsModule).sort().join(',')==='Search,WiredNetworkWarning','unexpected icon exports');
+    assert(fixtureFailures.length===0,fixtureFailures.join('; '));
+    ReactDOM.flushSync(()=>root.unmount());
+    document.getElementById('result').textContent=JSON.stringify({passed:true,realReactDOM:true,
+      publishedSearchField:true,publishedImageError:true,syntheticTextInput:true,svgPropsPreserved:true,
+      realArtworkChanged:false,realBackendContacted:false,realFrameContacted:false,
+      controllerInputVerified:false,wornVisibilityVerified:false,vrKeyboardVerified:false});
+  }catch(error){document.getElementById('result').textContent=JSON.stringify({passed:false,error:String(error.stack||error)});}
+})();
+</script>

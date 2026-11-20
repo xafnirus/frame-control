@@ -12,6 +12,15 @@ replay = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(replay)
 
 
+class SampleParent(unittest.TestCase):
+    def test_instrumentation_preserves_the_entire_shipped_parent(self):
+        source = (ROOT/'ui/headset.html').read_text()
+        document = replay.parent_document()
+        hook = '<script>'+replay.PARENT+'</script>'
+        self.assertEqual(document.count(hook), 1)
+        self.assertEqual(document.replace(hook, '', 1), source)
+
+
 @unittest.skipUnless(sys.platform.startswith('linux'), 'Native Linux pipe bridge')
 class SampleBrowserBridge(unittest.TestCase):
     def run_bridge(self, code, exercise):

@@ -10,6 +10,7 @@ installed; the desktop app does not bundle this command.
 scripts/frame-doctor.sh
 scripts/frame-doctor.sh --alias bedroom --lan 192.168.1.40
 scripts/frame-doctor.sh --alias frame --lan 192.168.1.40
+scripts/frame-doctor.sh --no-usb
 ```
 
 Use only addresses belonging to your intended headset. The command tries the
@@ -19,6 +20,16 @@ stopped publishing mDNS names, so use a known IP for `--lan` if `.local` no long
 resolves. `--alias`, `--lan` and `--usb`
 override those defaults. It reports the successful path without printing its
 address. It neither discovers other devices nor enables Tailscale.
+
+When the intended headset is not attached by USB, use **`--no-usb`** to skip
+that fallback. The configured alias and any explicit `--lan` address are still
+tried. `--usb` and `--no-usb` cannot be combined. Use the same choice for both
+before/after reports; changing it changes the target configuration and blocks
+comparison.
+
+Missing fallback addresses are skipped during the devkit-port check too. An
+omitted fallback cannot let a service on the computer's loopback address count
+as the Frame's devkit service.
 
 The existing alias supplies the user, port, keys and known-hosts file. LAN and
 USB overrides preserve its `HostKeyAlias`, or its configured hostname if no

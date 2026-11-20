@@ -72,15 +72,15 @@ export function buildIssue(value) {
   const kind = KINDS[value.kind];
   const details = [
     ["Frame Control version", value.version],
-    ["Computer", value.os],
+    ["Device and operating system", value.os],
     ["SteamOS build", value.steamos],
   ].filter(([, v]) => v);
 
   // Our own lines go first, so nothing in the sender's text can hide them.
   const lines = [
     value.github
-      ? `> Sent from the website feedback form by @${value.github}.`
-      : "> Sent from the website feedback form. The sender left no GitHub username, so they won't see replies here.",
+      ? `> Sent from the website feedback form. Username supplied by the sender (not verified): \`${value.github}\`.`
+      : "> Sent from the website feedback form. The sender left no GitHub username; they can bookmark or subscribe to this issue to follow replies.",
     "",
   ];
   if (details.length) {

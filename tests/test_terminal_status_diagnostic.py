@@ -19,6 +19,66 @@ diagnostic = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(diagnostic)
 
 
+class FrontendWaitEvidence(unittest.TestCase):
+    @staticmethod
+    def waiter(clock):
+        path = ROOT/'tests/decky-runtime/check.py'
+        tree = ast.parse(path.read_text())
+        tree.body = [node for node in tree.body if isinstance(node, ast.FunctionDef)
+                     and node.name == 'until_ready']
+        scope = {'time': clock, 'WebSocketException': type('WebSocketException', (Exception,), {})}
+        exec(compile(tree, str(path), 'exec'), scope)
+        return scope['until_ready']
+
+    def test_observation_preserves_real_wait_reads_result_and_timeout(self):
+        class Clock:
+            now = 100.0
+            def monotonic(self): return self.now
+            def sleep(self, seconds): self.now += seconds
+
+        for ready in (True, False):
+            outcomes = []
+            for observed in (False, True):
+                clock, calls, records, result = Clock(), [], [], object()
+                def read():
+                    calls.append(clock.now)
+                    return result if ready and len(calls) == 3 else False
+                wait = self.waiter(clock)
+                with patch.object(diagnostic, 'time', clock):
+                    try:
+                        if observed:
+                            value = diagnostic.observe_wait(wait, read, 'owned frontend',
+                                timeout=90, started=100.0, records=records)
+                        else:
+                            value = wait(read, 'owned frontend', timeout=90)
+                        self.assertIs(value, result)
+                        outcome = 'success'
+                    except RuntimeError:
+                        outcome = 'failure'
+                outcomes.append((calls, clock.now, outcome))
+                if observed:
+                    self.assertEqual(records[0]['outcome'], outcome)
+                    self.assertEqual(records[0]['timeoutSeconds'], 90)
+                    self.assertEqual(records[0]['finishedAfterSeconds'], round(clock.now-100, 3))
+                    # Later HTTP completion during cleanup cannot rewrite the failed wait.
+                    retained = json.dumps(records)
+                    clock.now += 35
+                    self.assertEqual(json.dumps(records), retained)
+            self.assertEqual(outcomes[0], outcomes[1])
+
+    def test_original_exception_propagates_without_retaining_its_text(self):
+        original = RuntimeError('private response text')
+        records = []
+        def fail(read, description, *, timeout):
+            raise original
+        with self.assertRaises(RuntimeError) as raised:
+            diagnostic.observe_wait(fail, lambda: None, 'owned frontend',
+                timeout=90, started=diagnostic.time.monotonic(), records=records)
+        self.assertIs(raised.exception, original)
+        self.assertEqual(records[0]['errorType'], 'RuntimeError')
+        self.assertNotIn('private response text', json.dumps(records))
+
+
 class RequestDrain(unittest.TestCase):
     def test_late_failed_http_request_is_recorded_before_diagnostics(self):
         from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer

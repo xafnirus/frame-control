@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Replay the shipped settings UI against native Decky over a private test bridge.
+"""Replay settings through the shipped headset parent and native Decky.
 
 The container has no network NIC. The browser uses an opaque Framey panel and
-synthetic DOM input; this does not exercise Frame's HTTP/SSH parent or worn VR.
+synthetic DOM input. HTTP responses and the Steam CEF connection are fixtures;
+this does not contact a Frame or verify worn VR.
 """
 import argparse
 import base64
@@ -22,13 +23,14 @@ import threading
 import time
 import uuid
 import zipfile
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT/'ui'))
 import framey_panel
 import frame_steam
 
-TITLE = 'Owned Framey sample settings replay'
+TITLE = 'Frame Control VR [fc-headset]'
 SOURCES = (
     'scripts/framey-test-sample-browser.py', 'tests/decky-runtime/sample_browser_rpc.py',
     'scripts/framey-test-sample-runtime.py', 'tests/decky-runtime/sample_settings.py',
@@ -38,7 +40,7 @@ SOURCES = (
     'tests/decky-runtime/deck_settings_private.py', 'tests/decky-runtime/runtime_console.py',
     'tests/framey_official.py', 'ui/frame_decky.py', 'ui/frame_decky_store.py',
     'ui/framey_compatibility.py', 'ui/framey-compatibility.json', 'ui/framey_panel.py',
-    'ui/framey-host.js', 'ui/frame_steam.py',
+    'ui/framey-host.js', 'ui/headset.html', 'ui/frame_steam.py',
     'ui/vendor/react-18.3.1.min.js', 'ui/vendor/react-dom-18.3.1.min.js',
     'examples/framey-settings/plugin.json', 'examples/framey-settings/main.py',
     'examples/framey-settings/py_modules/framey_decky_ipc.py', 'ui/framey_decky_ipc.py',
@@ -67,30 +69,33 @@ addEventListener('message',async event=>{
   }
   await wait(()=>text().includes('Saved setting: '+(expected?'on':'off'))&&
     document.querySelector('input[type=checkbox]').checked===expected&&!document.querySelector('input[type=checkbox]').disabled);
-  parent.postMessage({type:'test:stage',action,expected,checked:document.querySelector('input[type=checkbox]').checked,text:text(),errors},'*');
+  parent.postMessage({type:'test:stage',action,expected,opaqueOrigin:window.origin==='null',
+    checked:document.querySelector('input[type=checkbox]').checked,text:text(),errors},'*');
  }catch(error){parent.postMessage({type:'test:failure',error:String(error),errors},'*');}
 });
 '''
 PARENT = r'''
 window.ready=false;window.stage=null;window.failure=null;
+addEventListener('error',event=>{window.failure={error:event.message};});
+addEventListener('unhandledrejection',event=>{window.failure={error:String(event.reason)};});
 addEventListener('message',async event=>{
- const target=document.getElementById('panel').contentWindow;if(event.source!==target)return;
+ const target=document.getElementById('frameyFrame').contentWindow;if(event.source!==target)return;
  const req=event.data||{};
- if(req.type==='framey:cache:init'){target.postMessage({type:'framey:cache:seed',session:req.session,entries:{}},'*');return;}
  if(req.type==='framey:ready'){window.ready=true;return;}
  if(req.type==='framey:error'||req.type==='test:failure'){window.failure=req;return;}
  if(req.type==='test:stage'){window.stage=req;return;}
- if(req.type!=='framey:call')return;
- try{
-  const response=await fetch('/rpc',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(req)});
-  if(!response.ok)throw Error('Private bridge HTTP '+response.status);
-  const reply=await response.json();
-  target.postMessage({type:'framey:reply',id:req.id,...(reply.success?{result:reply.result}:{error:reply.result})},'*');
- }catch(error){window.failure={error:String(error)};}
 });
+window.openSample=()=>{window.ready=false;window.stage=null;window.failure=null;
+ closeFrameyPanel();openFrameyPanel(65535,'Framey Settings Sample');};
 window.advance=(action,expected)=>{window.stage=null;
- document.getElementById('panel').contentWindow.postMessage({type:'test:advance',action,expected},'*');};
+ document.getElementById('frameyFrame').contentWindow.postMessage({type:'test:advance',action,expected},'*');};
 '''
+
+
+def parent_document():
+    # Append observation/input hooks only. Keep all production initialization,
+    # iframe attributes, cache handling, API calls and reply/session checks.
+    return (ROOT/'ui/headset.html').read_text().replace('</body>', '<script>'+PARENT+'</script></body>')
 
 
 def module(name, path):
@@ -203,11 +208,8 @@ def replay(args, report):
             (plugin/'.frame-control-store.json').write_text(json.dumps(dict(storeId=65535, sha256=packed['sha256'])))
             framey_panel.PLUGINS = folder/'plugins'
             panel = framey_panel.panel(65535).decode()
-            for route, source in [('react.js','vendor/react-18.3.1.min.js'),('react-dom.js','vendor/react-dom-18.3.1.min.js'),('host.js','framey-host.js')]:
-                data=base64.b64encode((ROOT/'ui'/source).read_bytes()).decode()
-                panel=panel.replace(f'src="/framey-runtime/{route}"', f'src="data:text/javascript;base64,{data}"')
             panel=panel.replace('</html>','<script>'+PROBE+'</script></html>')
-            document='''<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' data: blob:; frame-src data:; connect-src 'self'; style-src 'unsafe-inline'; img-src data:"><title>'''+TITLE+'''</title><style>body{margin:0;background:#0d1925;color:white}iframe{width:1100px;height:1050px;border:0}</style><iframe id="panel" sandbox="allow-scripts" src="data:text/html;base64,'''+base64.b64encode(panel.encode()).decode()+'''#fixture"></iframe><script>'''+PARENT+'</script>'
+            document=parent_document()
             subprocess.run(['docker','build','-q','-t',image,'-f',str(ROOT/'tests/decky-runtime/Containerfile'),str(ROOT/'tests/decky-runtime')],check=True,timeout=300)
             with (args.output/'native-stderr.log').open('w') as native_log, (args.output/'browser.log').open('w') as browser_log:
                 command=['docker','run','--rm','-i','--name',container,'--network','none','--read-only','--cap-drop','ALL','--security-opt','no-new-privileges','--pids-limit','128','--tmpfs','/tmp:rw,exec,mode=1777','--tmpfs','/run/user/1100:rw,uid=1100,gid=1100,mode=700','--tmpfs','/home/tester:rw,exec,uid=1100,gid=1100,mode=700','--mount',f'type=bind,source={ROOT},target=/repo,readonly','--mount',f'type=bind,source={folder},target=/input,readonly','--entrypoint','python3',image,'/repo/tests/decky-runtime/sample_browser_rpc.py']
@@ -215,21 +217,45 @@ def replay(args, report):
                 bridge=Bridge(process);assert bridge.read()==dict(stage='ready',cycle=0)
                 class Handler(http.server.BaseHTTPRequestHandler):
                     def log_message(self, *_args): pass
+                    def send_value(self, value, status=200):
+                        self.send_response(status);self.send_header('Content-Type','application/json');self.end_headers()
+                        self.wfile.write(json.dumps(value).encode())
                     def do_GET(self):
-                        if self.path!='/':self.send_error(404);return
-                        self.send_response(200);self.send_header('Content-Type','text/html; charset=utf-8');self.end_headers();self.wfile.write(document.encode())
+                        path=urlsplit(self.path).path
+                        assets={'/':document, '/framey/panel/65535':panel,
+                            **{'/framey-runtime/'+name:(ROOT/'ui'/source).read_text() for name,source in
+                               [('react.js','vendor/react-18.3.1.min.js'),('react-dom.js','vendor/react-dom-18.3.1.min.js'),('host.js','framey-host.js')]}}
+                        if path in assets:
+                            self.send_response(200)
+                            self.send_header('Content-Type','text/javascript' if path.startswith('/framey-runtime/') else 'text/html; charset=utf-8')
+                            self.end_headers();self.wfile.write(assets[path].encode());return
+                        # Only unrelated status data is synthetic. The unchanged
+                        # parent discovers the receipt and opens its own iframe URL.
+                        fixtures={'/api/status':{}, '/api/running':{'running':[]}, '/api/record':{'state':'idle'},
+                            '/api/extensions':{'extensions':[],'errors':[],'folder':'Private fixture'},
+                            '/api/decky/panel-status':{'managed':True,'running':True,'plugins':[
+                                {'storeId':65535,'name':'Framey Settings Sample','version':'1.0', 'sha256':packed['sha256']}]}}
+                        if path in fixtures:
+                            assert self.headers.get('X-Frame-UI')=='owned-sample-fixture'
+                            self.send_value(fixtures[path]);return
+                        self.send_error(404)
                     def do_POST(self):
-                        if self.path!='/rpc':self.send_error(404);return
+                        assert self.headers.get('X-Frame-UI')=='owned-sample-fixture'
+                        if self.path=='/api/framey/check':self.send_value({});return
+                        if self.path!='/api/framey/method':self.send_error(404);return
                         length=int(self.headers.get('Content-Length','0'))
                         if not 0<length<=4096:self.send_error(400);return
                         request=json.loads(self.rfile.read(length));assert request.get('legacy') is False
+                        assert request['id']==65535 and request['receipt']==packed['sha256']
                         assert request['method'] in ('get_setting','set_setting')
                         value=bridge.call(dict(op='rpc',method=request['method'],args=request['args']))
-                        report['browserCalls'].append(dict(method=request['method'],args=request['args'],reply=value))
-                        self.send_response(200);self.send_header('Content-Type','application/json');self.end_headers();self.wfile.write(json.dumps(value).encode())
+                        report['browserCalls'].append(dict(path=self.path,pluginId=request['id'],receipt=request['receipt'],
+                            method=request['method'],args=request['args'],reply=value))
+                        self.send_value({'result':value['result']} if value['success'] else {'error':value['result']},
+                                        200 if value['success'] else 400)
                 server=http.server.ThreadingHTTPServer(('127.0.0.1',0),Handler)
                 thread=threading.Thread(target=server.serve_forever);thread.start()
-                url='http://127.0.0.1:'+str(server.server_address[1])+'/'
+                url='http://127.0.0.1:'+str(server.server_address[1])+'/#owned-sample-fixture'
                 browser=subprocess.Popen([str(args.browser.resolve()),'--headless','--disable-gpu','--no-first-run','--no-default-browser-check','--disable-background-networking','--user-data-dir='+str(folder/'profile'),'--window-size=1120,1100','--remote-debugging-address=127.0.0.1','--remote-debugging-port=0',url],stdout=browser_log,stderr=browser_log,start_new_session=True)
                 deadline=time.monotonic()+30
                 while page is None and time.monotonic()<deadline:
@@ -238,14 +264,16 @@ def replay(args, report):
                         frame_steam.CDP='http://127.0.0.1:'+port+'/json';page=frame_steam.Page(TITLE)
                     except (OSError,IndexError,frame_steam.Fail):time.sleep(.1)
                 assert page is not None,'Owned sample browser did not attach'
+                wait(page,'typeof openSample === "function" && deckyState?.running')
                 def stage(label, action, expected):
                     wait(page,'window.ready');page.eval('window.advance('+json.dumps(action)+','+json.dumps(expected)+')')
-                    value=wait(page,'window.stage');assert value['checked'] is expected and not value['errors'],value
+                    value=wait(page,'window.stage');assert value['checked'] is expected and value['opaqueOrigin'] and not value['errors'],value
                     report['stages'].append(dict(label=label,**value))
                     capture=screenshot(page);(args.output/(label+'.png')).write_bytes(capture)
                     report['captureSha256'][label]=hashlib.sha256(capture).hexdigest()
                 def reopen():
-                    page.eval('(()=>{window.ready=false;window.stage=null;window.failure=null;const panel=document.getElementById("panel");panel.replaceWith(panel.cloneNode(false));})()')
+                    page.eval('window.openSample()')
+                reopen()
                 stage('initial','read',False)
                 stage('saved-on','save-on',True)
                 report['snapshots'].append(bridge.call(dict(op='snapshot')))
@@ -257,6 +285,9 @@ def replay(args, report):
                 reopen();stage('reopened-off','read',False)
                 assert bridge.call(dict(op='finish'))==dict(stage='ready',cycle=2)
                 reopen();stage('restarted-off','read',False)
+                page.eval('window.fixtureReloading=true;location.reload();true')
+                wait(page,'!window.fixtureReloading && typeof openSample === "function" && deckyState?.running')
+                reopen();stage('page-reloaded-off','read',False)
                 report['snapshots'].append(bridge.call(dict(op='snapshot')))
                 complete=bridge.call(dict(op='finish'));assert complete['stage']=='complete';report['native']=complete['report']
                 process.stdin.close();assert process.wait(timeout=10)==0
@@ -265,7 +296,10 @@ def replay(args, report):
                     assert saved['value']==dict(schema=1,enabled=index==0) and saved['mode']=='0o600',saved
                     assert saved['sha256']==hashlib.sha256((json.dumps(saved['value'])+'\n').encode()).hexdigest()
                 assert [c['args'] for c in report['browserCalls'] if c['method']=='set_setting']==[['enabled',True],['enabled',False]]
-                report.update(success=True,realLoaderRestarts=2,syntheticInput=True,syntheticReceipt=True,syntheticParentBridge=True,productionFrameHttpParent=False,realFrameContacted=False,physicalControllerVerified=False,wornVisibilityVerified=False,browserSandboxDisabled=False)
+                report.update(success=True,realLoaderRestarts=2,syntheticInput=True,syntheticReceipt=True,
+                    syntheticParentBridge=False,productionHeadsetParent=True,fullParentReloadReadback=True,productionFrameHttpParent=False,
+                    syntheticHttpServer=True,realSteamCef=False,realFrameContacted=False,
+                    physicalControllerVerified=False,wornVisibilityVerified=False,browserSandboxDisabled=False)
         except Exception:
             if page:
                 try:

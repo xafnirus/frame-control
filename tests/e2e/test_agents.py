@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 
 import harness
-from harness import api, ok, finished, ssh
+from harness import api, ok, finished, ssh, wait_for
 
 harness.require()
 
@@ -46,3 +46,21 @@ class Agents(harness.FrameTestCase):
         token = self.approve(self.call('send_text', args))
         self.call('send_text', {**args, 'confirmation': token})
         self.assertEqual(harness.state()['clipboard'], ['MCP clipboard text'])
+
+    def test_running_and_approved_quit(self):
+        args = {'appid': '620980'}
+        launch = self.approve(self.call('launch', args))
+        self.call('launch', {**args, 'confirmation': launch})
+        self.addCleanup(api, 'POST', '/api/running', {'action': 'quit', 'appid': '620980'})
+        wait_for(lambda: any(g['appid'] == 620980 for g in self.call('running', {})['running']),
+                 20, 'the MCP-launched game to be running')
+        proposal = self.call('quit', args)
+        with self.assertRaises(ValueError):
+            self.call('quit', {**args, 'confirmation': proposal['confirmation']})
+        self.assertTrue(any(g['appid'] == 620980 for g in self.call('running', {})['running']))
+        token = self.approve(proposal)
+        result = self.call('quit', {**args, 'confirmation': token})
+        self.assertEqual(result['method'], 'steam')
+        self.assertFalse(any(g['appid'] == 620980 for g in self.call('running', {})['running']))
+        with self.assertRaises(ValueError):
+            self.call('quit', {**args, 'confirmation': token})

@@ -1,12 +1,16 @@
 # Website
 
-The Frame Control website, <https://frame-control.pages.dev>, on Cloudflare Pages.
+The Frame Control website, <https://framecontrol.fun>, on Cloudflare Pages.
 
 - `public/`: static pages. `/` is the landing page, `/feedback/` the feedback form, `/privacy/` the privacy note.
 - `functions/api/feedback.js`: `POST /api/feedback`, which turns the form into a GitHub issue labelled `feedback`.
 - `lib/feedback.js`: validation and issue formatting, tested by `test/feedback.test.mjs`.
 - `public/js/site.js`: settings, including the Ko-fi page name for the donate buttons, OS hints and opening-help deep links. OS hints lead to instructions, never directly to an architecture-specific installer.
 - `test/onboarding.test.mjs`: desktop/mobile browser hints and opening-help deep links.
+
+Support links stay hidden until the shared script assigns the configured Ko-fi
+URL. The homepage offers its GitHub support link before that script runs,
+including when JavaScript is unavailable or the Ko-fi setting is empty.
 
 ## Feedback → GitHub issues
 
@@ -34,6 +38,38 @@ npx wrangler pages deploy --branch main      # production
 ```
 
 Point `GITHUB_REPO` in `.dev.vars` at a scratch repo when testing locally so test issues don't land on the real tracker.
+
+## Source and production reconciliation
+
+The source was compared with the public homepage, stylesheet, both scripts,
+feedback page and privacy page on 2026-11-19. Preserve these decisions on the
+next deployment:
+
+- Keep all desktop architecture choices, checksum instructions, explicit
+  connection setup and OS-only browser hints from the repository. Production's
+  older Apple Silicon restriction and architecture guesses are obsolete.
+- Preserve the public iPhone beta and existing `#iphone`, `#mac-first-launch`,
+  `#windows-first-launch` and `#linux-first-launch` links. The latter three
+  coexist with the repository's newer `*-opening` links.
+- Keep the mobile button wrapping, visible Support link and improved button
+  contrast from production, together with the repository's sticky-navigation
+  spacing, code wrapping and reduced-motion handling.
+- Disclose actual desktop telemetry, optional private reports/contact consent
+  and public website feedback. The privacy page links to the published
+  v0.4.62 implementation guide; it must be reviewed when those practices change.
+- Do not restore blanket real-Frame compatibility claims or verified off-LAN
+  access. Page checks do not qualify either one.
+
+Feedback delivery distinguishes a confirmed rejection from an unknown outcome.
+An unknown outcome keeps the draft and links to recent issues before another
+submission. The function performs no application-level POST retry. This is not
+server-side idempotency: a browser or network may repeat a request after a broken
+connection. Usernames are unverified, do not ping an account, and do not promise
+notifications; senders can subscribe to the resulting issue themselves.
+
+This reconciliation does not deploy the site or prove the production function,
+private secret and KV bindings. Check those separately during an authorized
+deployment; do not submit synthetic reports to the live feedback endpoint.
 
 ## First-run verification
 
